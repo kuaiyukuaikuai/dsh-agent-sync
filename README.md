@@ -72,8 +72,10 @@ Restart DSH.
 
 **Settings → MCP/Skills** (main page **MCP/Skills 管理**)
 
-- **Manage (main page)** — profile tabs (`desktop` / `web`) → **MCP / Skills** switch; each row has **停用/启用** toggle and remove; disabled items are shown greyed below so you can re-enable them
+- **Manage (main page)** — profile tabs (`desktop` / `web`) → **MCP / Skills** switch; card grid where each card has a **toggle switch** (enable/disable in one control) and remove; disabled items are greyed with a badge
 - **MCP/Skills同步 →** — a button that opens the sync page: per-source tabs (common agents + "More ▾"), select-all, sync buttons, and custom sources
+
+> **UI implementation** — no component library. The panel is vanilla React (`React.createElement`) styled with DSH's theme tokens (`--dsw-alias-*`), matching the plugin market look; the toggle switch is a small custom CSS component.
 
 ### Model tools
 

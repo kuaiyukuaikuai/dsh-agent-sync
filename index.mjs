@@ -160,6 +160,29 @@ async function scanSkillsDir(dir) {
   return [...seen.values()]
 }
 
+// 直接扫描 $DSH_HOME/skills 文件系统作为「真实状态」来源（不依赖会话的 skill 服务）：
+// 目录束 <name>/SKILL.md（或 .disabled）与单文件 <name>.md（或 .md.disabled）。
+async function listSkillsOnDisk() {
+  const skillsRoot = join(DSH_HOME, 'skills')
+  const names = await listDir(skillsRoot)
+  const out = []
+  for (const n of names) {
+    if (n === '.system') continue
+    const full = join(skillsRoot, n)
+    const md = join(full, 'SKILL.md')
+    const mdD = join(full, 'SKILL.md.disabled')
+    let kind = null, enabled = null, file = null
+    if (await exists(md)) { kind = 'bundle'; enabled = true; file = md }
+    else if (await exists(mdD)) { kind = 'bundle'; enabled = false; file = mdD }
+    else if (n.endsWith('.md.disabled')) { kind = 'flat'; enabled = false; file = full }
+    else if (n.endsWith('.md')) { kind = 'flat'; enabled = true; file = full }
+    if (!file) continue
+    const meta = parseSkillFrontmatter((await readText(file)) || '')
+    out.push({ name: meta.name || n.replace(/\.md(\.disabled)?$/i, ''), description: meta.description || '', enabled: !!enabled, kind, path: full })
+  }
+  return out
+}
+
 // ---------------------------------------------------------------------------
 // MCP normalization
 // ---------------------------------------------------------------------------
@@ -844,14 +867,20 @@ async function syncSkills(selected, opts = {}) {
 
 async function status(ctx) {
   const state = await readState()
-  let dshSkills = []
+  let skillProvider = 'unavailable'
   const skillsSvc = ctx ? ctx.get('skills') : undefined
   if (skillsSvc) {
     try {
-      const list = await skillsSvc.list()
-      dshSkills = list.map((s) => ({ name: s.name, description: s.description }))
+      await skillsSvc.list()
+      skillProvider = 'available'
     } catch { /* registry not available */ }
   }
+  const disk = await listSkillsOnDisk()
+  const dshSkills = disk.filter((s) => s.enabled).map((s) => ({ name: s.name, description: s.description, path: s.path, kind: s.kind }))
+  const disabledSkills = disk.filter((s) => !s.enabled).map((s) => ({
+    name: s.name,
+    source: (state.skills[s.name] && state.skills[s.name].source) || 'user',
+  }))
   const mcpInPatch = []
   for (const p of await profilesWithPatch()) {
     const text = await readText(p.patchPath)
@@ -864,10 +893,7 @@ async function status(ctx) {
   const disabledMcp = Object.keys(state.mcp)
     .filter((n) => state.mcp[n].enabled === false)
     .map((n) => ({ name: n, source: state.mcp[n].source }))
-  const disabledSkills = Object.keys(state.skills)
-    .filter((n) => state.skills[n].enabled === false)
-    .map((n) => ({ name: n, source: state.skills[n].source }))
-  return { dshSkills, mcpInPatch, disabledMcp, disabledSkills, state, sources: await readSources() }
+  return { dshSkills, mcpInPatch, disabledMcp, disabledSkills, skillProvider, state, sources: await readSources() }
 }
 
 async function setMcpEnabled(name, enabled) {
@@ -1067,6 +1093,7 @@ function registerTools(ctx) {
   }))
 
   ctx.tools.register(textTool({
+    name: 'agent_sync_remove',
     description: "Remove a previously synced item from DSH. type \"mcp\" removes the mcp-<name> entry from every profile's cordis.patch.yml; type \"skill\" deletes the copied skill directory/file from <dshHome>/skills. Pass the exact name shown by agent_sync_status.",
     parameters: {
       type: { type: 'string', enum: ['mcp', 'skill'], required: true, description: 'What to remove: "mcp" or "skill".' },

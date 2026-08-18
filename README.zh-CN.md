@@ -71,8 +71,10 @@ pnpm add dsh-agent-sync        # 或：pnpm add github:kuaiyukuaikuai/dsh-agent-
 
 **设置 → MCP/Skills**（主页 **MCP/Skills 管理**）
 
-- **管理（主页置顶）** —— profile Tab（`desktop` / `web`）→ **MCP / Skills** 切换；每行带**停用/启用**开关与移除；已停用条目灰色列在下方，可随时重新启用
+- **管理（主页置顶）** —— profile Tab（`desktop` / `web`）→ **MCP / Skills** 切换；卡片网格，每张卡片带**开关**（启停合一）与移除；已停用卡片置灰并带徽标
 - **MCP/Skills同步 →** —— 一个按钮，点击进入同步页：来源 Tab（常用 agent +「更多 ▾」）、全选、同步按钮、自定义源
+
+> **UI 实现** —— 不依赖组件库。面板为纯 React（`React.createElement`）+ DSH 主题变量（`--dsw-alias-*`）自绘，与插件市场风格一致；开关是自绘的小型 CSS 组件。
 
 ### 模型工具
 
