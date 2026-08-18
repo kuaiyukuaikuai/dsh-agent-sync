@@ -69,12 +69,10 @@ pnpm add dsh-agent-sync        # 或：pnpm add github:kuaiyukuaikuai/dsh-agent-
 
 ### GUI 面板
 
-**设置 → MCP/Skills同步**
+**设置 → MCP/Skills**（主页 **MCP/Skills 管理**）
 
-- **来源 Tab** —— 常用 agent 放第一行，冷门的在「更多 ▾」里
-- **可同步的 MCP / 可同步的 Skills** —— 点击切换；勾选服务器/skill，支持**全选**，然后点同步
-- **DSH 现状** —— 按 profile（`desktop` / `web`）分组，各自列出 MCP 条目与 Skills，带**停用/启用**开关和移除按钮；已停用的条目列在下方，可随时重新启用
-- **自定义源** —— 随时添加 JSON / TOML / 技能目录源
+- **管理（主页置顶）** —— profile Tab（`desktop` / `web`）→ **MCP / Skills** 切换；每行带**停用/启用**开关与移除；已停用条目灰色列在下方，可随时重新启用
+- **MCP/Skills同步 →** —— 一个按钮，点击进入同步页：来源 Tab（常用 agent +「更多 ▾」）、全选、同步按钮、自定义源
 
 ### 模型工具
 

@@ -70,12 +70,10 @@ Restart DSH.
 
 ### GUI panel
 
-**Settings → MCP/Skills同步**
+**Settings → MCP/Skills** (main page **MCP/Skills 管理**)
 
-- **Source tabs** — commonly used agents on the first row, less common ones under **More ▾**
-- **可同步的 MCP / 可同步的 Skills** — switch between them, tick servers/skills, **select-all** per view, then **sync**
-- **DSH 现状** — grouped by profile (`desktop` / `web`), each with its MCP entries and Skills, **停用/启用** toggles and remove buttons; disabled items are listed below so you can re-enable them
-- **Custom sources** — add a JSON / TOML / directory source on the fly
+- **Manage (main page)** — profile tabs (`desktop` / `web`) → **MCP / Skills** switch; each row has **停用/启用** toggle and remove; disabled items are shown greyed below so you can re-enable them
+- **MCP/Skills同步 →** — a button that opens the sync page: per-source tabs (common agents + "More ▾"), select-all, sync buttons, and custom sources
 
 ### Model tools
 

@@ -113,6 +113,7 @@ window.__ModuleLoader__.load({
       var tab = state[0].tab || 'all'
       var moreOpen = !!state[0].moreOpen
       var syncTab = state[0].syncTab || 'mcp'
+      var view = state[0].view || 'main'
       var profTab = state[0].profTab || ''
       var stTab = state[0].stTab || 'mcp'
       var loading = state[0].loading !== false
@@ -322,12 +323,32 @@ window.__ModuleLoader__.load({
               ? h('div', { className: 'ags-empty' }, '暂无已同步的 skill')
               : null)
 
-      return h('div', { className: 'ags-panel' },
+      // 主界面：DSH 现状（可启停）置顶
+      var mainView = h('div', null,
         h('div', { className: 'ags-h' },
+          h('span', { className: 'ags-title' }, 'MCP/Skills 管理'),
+          h('button', { className: 'ags-btn', onClick: function () { loadAll() }, disabled: loading }, loading ? '加载中…' : '🔄 刷新'),
+          h('span', { className: 'ags-sub' }, '启停 / 移除已同步到 DSH 的 MCP 与 skill'),
+          h('button', { className: 'ags-btn ags-btn-primary', style: { marginLeft: 'auto' }, onClick: function () { upd({ view: 'sync' }) } }, 'MCP/Skills同步 →')),
+        h('div', { className: 'ags-sec' },
+          h('div', { className: 'ags-tabs' },
+            profTabs.map(function (p) {
+              return h('button', { key: 'ptab-' + p.name, className: 'ags-tab' + (activeCard && activeCard.name === p.name ? ' ags-tab-active' : ''), onClick: function () { upd({ profTab: p.name }) } },
+                p.name + ' (' + (p.mcp.length + dshSkillList.length + disabledMcp.length + disabledSkills.length) + ')')
+            })),
+          h('div', { className: 'ags-tabs' },
+            h('button', { className: 'ags-tab' + (stTab === 'mcp' ? ' ags-tab-active' : ''), onClick: function () { upd({ stTab: 'mcp' }) } }, 'MCP'),
+            h('button', { className: 'ags-tab' + (stTab === 'skills' ? ' ags-tab-active' : ''), onClick: function () { upd({ stTab: 'skills' }) } }, 'Skills')
+          ),
+          activeCard ? statusBody : h('div', { className: 'ags-empty' }, '暂无 profile 数据')))
+
+      // 同步页：从其他 agent 同步 MCP / skill（按钮进入）
+      var syncView = h('div', null,
+        h('div', { className: 'ags-h' },
+          h('button', { className: 'ags-btn', onClick: function () { upd({ view: 'main' }) } }, '← 返回'),
           h('span', { className: 'ags-title' }, 'MCP/Skills同步'),
           h('button', { className: 'ags-btn', onClick: function () { loadAll() }, disabled: loading }, loading ? '加载中…' : '🔄 刷新'),
-          h('span', { className: 'ags-sub' }, '扫描、同步并启停本机各 agent 的 MCP 与 skill')),
-
+          h('span', { className: 'ags-sub' }, '从其他 agent 一键同步 MCP 与 skill 进 DSH')),
         (function () {
           var moreActive = moreOpen || MORE_TABS.indexOf(tab) >= 0
           function tabBtn(t) {
@@ -341,27 +362,12 @@ window.__ModuleLoader__.load({
             moreActive ? h('div', { className: 'ags-tabs' }, MORE_TABS.map(tabBtn)) : null,
           ]
         })(),
-
         h('div', { className: 'ags-sec' },
           h('div', { className: 'ags-tabs' },
             h('button', { className: 'ags-tab' + (syncTab === 'mcp' ? ' ags-tab-active' : ''), onClick: function () { upd({ syncTab: 'mcp' }) } }, '可同步的 MCP (' + visibleMcp.length + ')'),
             h('button', { className: 'ags-tab' + (syncTab === 'skills' ? ' ags-tab-active' : ''), onClick: function () { upd({ syncTab: 'skills' }) } }, '可同步的 Skills (' + visibleSkills.length + ')')
           ),
           syncBody),
-
-        h('div', { className: 'ags-sec' },
-          h('div', { className: 'ags-h', style: { marginTop: 0 } }, 'DSH 现状（桌面 GUI 重启后生效）'),
-          h('div', { className: 'ags-tabs' },
-            profTabs.map(function (p) {
-              return h('button', { key: 'ptab-' + p.name, className: 'ags-tab' + (activeCard && activeCard.name === p.name ? ' ags-tab-active' : ''), onClick: function () { upd({ profTab: p.name }) } },
-                p.name + ' (' + (p.mcp.length + dshSkillList.length) + ')')
-            })),
-          h('div', { className: 'ags-tabs' },
-            h('button', { className: 'ags-tab' + (stTab === 'mcp' ? ' ags-tab-active' : ''), onClick: function () { upd({ stTab: 'mcp' }) } }, 'MCP'),
-            h('button', { className: 'ags-tab' + (stTab === 'skills' ? ' ags-tab-active' : ''), onClick: function () { upd({ stTab: 'skills' }) } }, 'Skills')
-          ),
-          activeCard ? statusBody : h('div', { className: 'ags-empty' }, '暂无 profile 数据')),
-
         h('div', { className: 'ags-sec' },
           h('div', { className: 'ags-h', style: { marginTop: 0 } }, '自定义源 (' + sources.length + ')'),
           sourceRows.length ? sourceRows : h('div', { className: 'ags-empty' }, '无自定义源'),
@@ -377,8 +383,10 @@ window.__ModuleLoader__.load({
             input('路径', 'path', '绝对路径', true),
             input('key', 'mcpKey', 'mcpServers'),
             input('section', 'section', 'mcp_servers'),
-            h('button', { className: 'ags-btn ags-btn-primary', disabled: !form.id || !form.path, onClick: addSource }, '添加'))),
+            h('button', { className: 'ags-btn ags-btn-primary', disabled: !form.id || !form.path, onClick: addSource }, '添加'))))
 
+      return h('div', { className: 'ags-panel' },
+        view === 'main' ? mainView : syncView,
         msg ? h('div', { className: 'ags-msg' + msgClass }, msg) : null)
     }
 
@@ -388,7 +396,7 @@ window.__ModuleLoader__.load({
       ensureStyles()
       slots.inject('settings.section', function () {
         return slots.register(
-          { name: 'settings.section', id: 'dsh-agent-sync', order: 50, label: function () { return 'MCP/Skills同步' } },
+          { name: 'settings.section', id: 'dsh-agent-sync', order: 50, label: function () { return 'MCP/Skills' } },
           function (props) { return h(Panel, props) })
       })
     }
