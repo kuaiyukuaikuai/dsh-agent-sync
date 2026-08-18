@@ -28,6 +28,7 @@ servers** and **Skills** into DSH with one click.
 | 🔍 Auto-scan | Reads each agent's real config (`~/.codex/config.toml`, `~/.claude.json`, `~/.cc-switch/cc-switch.db`, `~/.codebuddy/mcp.json`, `~/.workbuddy/.mcp.json`, …) and discovers MCP servers + Skills |
 | ⚡ One-click sync MCP | Writes servers as `@deepseek-ai/dsh-mcp-client` instances into every profile's `cordis.patch.yml` (auto-repairs invalid YAML) → they become `mcp__<server>__<tool>` tools |
 | 🧠 One-click sync Skills | Copies skill bundles into `$DSH_HOME/skills`, auto-discovered by DSH's skill-filesystem provider |
+| 🔀 Enable / Disable | Toggle any synced MCP server or skill on/off — disabled MCPs are dropped from the profile patch, disabled skills have their `SKILL.md` renamed to `SKILL.md.disabled` (hidden from discovery, fully reversible) |
 | 🖥️ GUI panel | Settings → **MCP/Skills同步**: per-source tabs (main + "More"), MCP/Skills switch, select-all, and a profile-grouped status view |
 | 🛠️ Model tools | `agent_sync_scan` / `agent_sync_do` / `agent_sync_status` / `agent_sync_remove` / `agent_sync_sources` |
 | 🧩 Extensible | A generic agent registry (`AGENT_DEFS`) — adding a new agent is one line |
@@ -73,7 +74,7 @@ Restart DSH.
 
 - **Source tabs** — commonly used agents on the first row, less common ones under **More ▾**
 - **可同步的 MCP / 可同步的 Skills** — switch between them, tick servers/skills, **select-all** per view, then **sync**
-- **DSH 现状** — grouped by profile (`desktop` / `web`), each with its MCP entries and Skills, with remove buttons
+- **DSH 现状** — grouped by profile (`desktop` / `web`), each with its MCP entries and Skills, **停用/启用** toggles and remove buttons; disabled items are listed below so you can re-enable them
 - **Custom sources** — add a JSON / TOML / directory source on the fly
 
 ### Model tools
@@ -81,7 +82,8 @@ Restart DSH.
 ```
 agent_sync_scan      # list what can be synced (env values are hidden, keys only)
 agent_sync_do        # mcp: ["all"] or names, skills: ["all"] or names
-agent_sync_status    # current DSH-side state + sync bookkeeping
+agent_sync_toggle    # enable/disable a synced mcp/skill ({type, name, enabled})
+agent_sync_status    # current DSH-side state + sync bookkeeping (incl. disabled items)
 agent_sync_remove    # remove a synced mcp/skill
 agent_sync_sources   # manage custom sources (list / add / delete)
 ```

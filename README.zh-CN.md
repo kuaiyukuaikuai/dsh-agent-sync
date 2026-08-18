@@ -28,6 +28,7 @@ Windsurf、Cline、Roo Code、Qwen Code 等** —— 并把它们的 **MCP 服�
 | 🔍 自动扫描 | 读取各 agent 的真实配置（`~/.codex/config.toml`、`~/.claude.json`、`~/.cc-switch/cc-switch.db`、`~/.codebuddy/mcp.json`、`~/.workbuddy/.mcp.json` …），发现 MCP 服务器与 Skills |
 | ⚡ 一键同步 MCP | 以 `@deepseek-ai/dsh-mcp-client` 实例写入每个 profile 的 `cordis.patch.yml`（自动修复非法 YAML）→ 变成 `mcp__<server>__<tool>` 工具 |
 | 🧠 一键同步 Skills | 把技能包拷入 `$DSH_HOME/skills`，由 DSH 的 skill-filesystem 提供方自动发现 |
+| 🔀 启停开关 | 对任意已同步的 MCP 服务器 / skill 一键停用或启用——停用的 MCP 从 profile patch 移除，停用的 skill 把 `SKILL.md` 改名为 `SKILL.md.disabled`（对发现隐藏，随时可逆） |
 | 🖥️ GUI 面板 | 设置 → **MCP/Skills同步**：来源 Tab（一级 +「更多」）、MCP/Skills 切换、全选、按 profile 分组的现状视图 |
 | 🛠️ 模型工具 | `agent_sync_scan` / `agent_sync_do` / `agent_sync_status` / `agent_sync_remove` / `agent_sync_sources` |
 | 🧩 易扩展 | 通用 agent 注册表（`AGENT_DEFS`）——新增一个 agent 只需一行 |
@@ -72,7 +73,7 @@ pnpm add dsh-agent-sync        # 或：pnpm add github:kuaiyukuaikuai/dsh-agent-
 
 - **来源 Tab** —— 常用 agent 放第一行，冷门的在「更多 ▾」里
 - **可同步的 MCP / 可同步的 Skills** —— 点击切换；勾选服务器/skill，支持**全选**，然后点同步
-- **DSH 现状** —— 按 profile（`desktop` / `web`）分组，各自列出 MCP 条目与 Skills，可一键移除
+- **DSH 现状** —— 按 profile（`desktop` / `web`）分组，各自列出 MCP 条目与 Skills，带**停用/启用**开关和移除按钮；已停用的条目列在下方，可随时重新启用
 - **自定义源** —— 随时添加 JSON / TOML / 技能目录源
 
 ### 模型工具
@@ -80,7 +81,8 @@ pnpm add dsh-agent-sync        # 或：pnpm add github:kuaiyukuaikuai/dsh-agent-
 ```
 agent_sync_scan      # 列出可同步内容（env 只显示键名，不泄露值）
 agent_sync_do        # mcp: ["all"] 或名称，skills: ["all"] 或名称
-agent_sync_status    # 当前 DSH 状态 + 同步台账
+agent_sync_toggle    # 启停已同步的 mcp/skill（{type, name, enabled}）
+agent_sync_status    # 当前 DSH 状态 + 同步台账（含已停用条目）
 agent_sync_remove    # 移除已同步的 mcp/skill
 agent_sync_sources   # 管理自定义源（list / add / delete）
 ```

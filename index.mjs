@@ -14,7 +14,7 @@
 
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { DatabaseSync } from 'node:sqlite'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
@@ -764,6 +764,12 @@ async function collectSkillCandidates(sources) {
   return byName
 }
 
+function enabledMcpEntries(state) {
+  return Object.keys(state.mcp)
+    .filter((n) => state.mcp[n].enabled !== false)
+    .map((n) => ({ entryId: state.mcp[n].entryId, serverName: n, config: state.mcp[n].config }))
+}
+
 async function syncMcp(selected, opts = {}) {
   const state = await readState()
   const cand = await collectMcpCandidates(opts.sources)
@@ -778,6 +784,7 @@ async function syncMcp(selected, opts = {}) {
       source: item.source,
       entryId,
       config: item.config,
+      enabled: state.mcp[name] ? state.mcp[name].enabled !== false : true,
       syncedAt: new Date().toISOString(),
     }
     synced.push(name)
@@ -785,11 +792,7 @@ async function syncMcp(selected, opts = {}) {
   const profiles = opts.profile
     ? (await profilesWithPatch()).filter((p) => p.name === opts.profile)
     : await profilesWithPatch()
-  const entries = Object.keys(state.mcp).map((name) => ({
-    entryId: state.mcp[name].entryId,
-    serverName: name,
-    config: state.mcp[name].config,
-  }))
+  const entries = enabledMcpEntries(state)
   const profileResults = []
   for (const p of profiles) {
     const text = await readText(p.patchPath)
@@ -828,7 +831,11 @@ async function syncSkills(selected, opts = {}) {
       continue
     }
     await copyPath(item.src, dst)
-    state.skills[safe] = { source: item.source, src: item.src, dst, syncedAt: new Date().toISOString() }
+    state.skills[safe] = {
+      source: item.source, src: item.src, dst,
+      enabled: state.skills[safe] ? state.skills[safe].enabled !== false : true,
+      syncedAt: new Date().toISOString(),
+    }
     synced.push({ name: safe, dst })
   }
   await writeState(state)
@@ -854,17 +861,66 @@ async function status(ctx) {
     while ((m = re.exec(text))) ids.push(m[1])
     mcpInPatch.push({ profile: p.name, entries: ids })
   }
-  return { dshSkills, mcpInPatch, state, sources: await readSources() }
+  const disabledMcp = Object.keys(state.mcp)
+    .filter((n) => state.mcp[n].enabled === false)
+    .map((n) => ({ name: n, source: state.mcp[n].source }))
+  const disabledSkills = Object.keys(state.skills)
+    .filter((n) => state.skills[n].enabled === false)
+    .map((n) => ({ name: n, source: state.skills[n].source }))
+  return { dshSkills, mcpInPatch, disabledMcp, disabledSkills, state, sources: await readSources() }
+}
+
+async function setMcpEnabled(name, enabled) {
+  const state = await readState()
+  if (!state.mcp[name]) return { ok: false, error: `not a synced MCP server: ${name}` }
+  state.mcp[name].enabled = !!enabled
+  await writeState(state)
+  const entries = enabledMcpEntries(state)
+  const results = []
+  for (const p of await profilesWithPatch()) {
+    const text = await readText(p.patchPath)
+    const next = rebuildPatchText(text, entries)
+    if (next !== text) {
+      await writeText(p.patchPath, next)
+      results.push({ profile: p.name, updated: true })
+    } else {
+      results.push({ profile: p.name, updated: false })
+    }
+  }
+  return { name, enabled: !!enabled, profiles: results }
+}
+
+async function setSkillEnabled(name, enabled) {
+  const state = await readState()
+  const safe = sanitizeSkillName(name)
+  const skillsRoot = join(DSH_HOME, 'skills')
+  const dirPath = join(skillsRoot, safe)
+  const md = join(dirPath, 'SKILL.md')
+  const mdDisabled = join(dirPath, 'SKILL.md.disabled')
+  const flat = join(skillsRoot, `${safe}.md`)
+  const flatDisabled = join(skillsRoot, `${safe}.md.disabled`)
+  let did = false
+  if (enabled) {
+    if (await exists(mdDisabled)) { await rename(mdDisabled, md); did = true }
+    else if (await exists(flatDisabled)) { await rename(flatDisabled, flat); did = true }
+  } else {
+    if (await exists(md)) { await rename(md, mdDisabled); did = true }
+    else if (await exists(flat)) { await rename(flat, flatDisabled); did = true }
+  }
+  if (!did) return { ok: false, error: `skill not found in ~/.dsh/skills: ${safe}` }
+  if (state.skills[safe]) {
+    state.skills[safe].enabled = !!enabled
+  } else {
+    state.skills[safe] = { source: 'user', enabled: !!enabled, syncedAt: new Date().toISOString() }
+  }
+  await writeState(state)
+  return { name: safe, enabled: !!enabled }
 }
 
 async function removeMcp(name) {
   const state = await readState()
   if (state.mcp[name]) delete state.mcp[name]
-  const entries = Object.keys(state.mcp).map((n) => ({
-    entryId: state.mcp[n].entryId,
-    serverName: n,
-    config: state.mcp[n].config,
-  }))
+  const entries = enabledMcpEntries(state)
   const results = []
   for (const p of await profilesWithPatch()) {
     const text = await readText(p.patchPath)
@@ -991,7 +1047,26 @@ function registerTools(ctx) {
   }))
 
   ctx.tools.register(textTool({
-    name: 'agent_sync_remove',
+    name: 'agent_sync_toggle',
+    description: 'Enable or disable a synced MCP server or skill in DSH. type "mcp": toggles the mcp-<name> entry — disabled servers are excluded from every profile\'s cordis.patch.yml until re-enabled. type "skill": toggles the copied skill by renaming its SKILL.md to SKILL.md.disabled (or back), which hides it from DSH discovery. Pass the exact name shown by agent_sync_status. Returns the new enabled state.',
+    parameters: {
+      type: { type: 'string', enum: ['mcp', 'skill'], required: true, description: 'What to toggle: "mcp" or "skill".' },
+      name: { type: 'string', required: true, description: 'Exact name of the synced item.' },
+      enabled: { type: 'boolean', required: true, description: 'true to enable, false to disable.' },
+    },
+    execute: async (args) => {
+      try {
+        const out = args.type === 'skill'
+          ? await setSkillEnabled(args.name, args.enabled)
+          : await setMcpEnabled(args.name, args.enabled)
+        return JSON.stringify({ ok: true, ...out }, null, 2)
+      } catch (e) {
+        return JSON.stringify({ ok: false, error: String((e && e.message) || e) })
+      }
+    },
+  }))
+
+  ctx.tools.register(textTool({
     description: "Remove a previously synced item from DSH. type \"mcp\" removes the mcp-<name> entry from every profile's cordis.patch.yml; type \"skill\" deletes the copied skill directory/file from <dshHome>/skills. Pass the exact name shown by agent_sync_status.",
     parameters: {
       type: { type: 'string', enum: ['mcp', 'skill'], required: true, description: 'What to remove: "mcp" or "skill".' },
@@ -1095,6 +1170,13 @@ function registerRoutes(ctx) {
     try {
       const a = await readArgs(req)
       json(res, a.type === 'skill' ? await removeSkill(a.name) : await removeMcp(a.name))
+    } catch (e) { json(res, { ok: false, error: String((e && e.message) || e) }, 500) }
+  })
+
+  route('/dsh-agent-sync/toggle', async (req, res) => {
+    try {
+      const a = await readArgs(req)
+      json(res, a.type === 'skill' ? await setSkillEnabled(a.name, a.enabled) : await setMcpEnabled(a.name, a.enabled))
     } catch (e) { json(res, { ok: false, error: String((e && e.message) || e) }, 500) }
   })
 

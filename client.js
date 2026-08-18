@@ -28,7 +28,7 @@ window.__ModuleLoader__.load({
       '.ags-sec{background:var(--dsw-alias-bg-layer-1,#ffffff);border:1px solid var(--dsw-alias-border-l1,#e5e7eb);border-radius:8px;padding:10px 12px;margin:8px 0}' +
       '.ags-row{display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--dsw-alias-border-l1,#eceef1)}' +
       '.ags-row:last-child{border-bottom:none}' +
-      '.ags-name{font-weight:500;flex:0 0 auto}' +
+      '.ags-name{font-weight:500;flex:0 0 auto}.ags-off{opacity:.45}' +
       '.ags-meta{color:var(--dsw-alias-label-secondary,#6b7280);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1 1 auto}' +
       '.ags-tag{border:1px solid var(--dsw-alias-border-l2,#d9dde3);color:var(--dsw-alias-label-secondary,#6b7280);border-radius:4px;flex:0 0 auto;padding:1px 6px;font-size:11px;line-height:16px}' +
       '.ags-btn{font:inherit;color:var(--dsw-alias-label-primary,#1f2328);background:transparent;border:1px solid var(--dsw-alias-border-l2,#d9dde3);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;margin-right:6px}' +
@@ -179,6 +179,13 @@ window.__ModuleLoader__.load({
         }).catch(function (e) { upd({ msg: '移除失败: ' + String((e && e.message) || e) }) })
       }
 
+      function toggleItem(type, name, enabled) {
+        call('toggle', { type: type, name: name, enabled: enabled }).then(function () {
+          upd({ msg: (enabled ? '已启用 ' : '已停用 ') + name })
+          loadAll()
+        }).catch(function (e) { upd({ msg: '操作失败: ' + String((e && e.message) || e) }) })
+      }
+
       function addSource() {
         var a = { action: 'add', id: form.id, label: form.label, kind: form.kind, path: form.path }
         if (form.mcpKey) a.mcpKey = form.mcpKey
@@ -233,6 +240,8 @@ window.__ModuleLoader__.load({
         }
       }
       var dshSkillList = (stat && stat.dshSkills) || []
+      var disabledMcp = (stat && stat.disabledMcp) || []
+      var disabledSkills = (stat && stat.disabledSkills) || []
       var activeCard = profTabs.filter(function (p) { return p.name === profTab })[0] || profTabs[0] || null
 
       var sourceRows = sources.map(function (s) {
@@ -272,28 +281,52 @@ window.__ModuleLoader__.load({
                 chk(allSkillChecked, function () { toggleAllSkill() }),
                 '全选本页')))
 
-      // DSH 现状内容：按 stTab 切换 MCP / Skills
+      // DSH 现状内容：按 stTab 切换 MCP / Skills（含停用/启用开关）
       var statusBody = stTab === 'mcp'
-        ? (activeCard && activeCard.mcp.length
-            ? activeCard.mcp.map(function (name) {
-                return h('div', { key: 'st-' + activeCard.name + '-mcp-' + name, className: 'ags-row' },
-                  h('span', { className: 'ags-name' }, 'mcp-' + name),
-                  h('button', { className: 'ags-btn', onClick: function () { removeItem('mcp', name) } }, '移除'))
-              })
-            : h('div', { className: 'ags-empty' }, '暂无已同步的 MCP'))
-        : (dshSkillList.length
-            ? dshSkillList.map(function (sk) {
-                return h('div', { key: 'st-skill-' + sk.name, className: 'ags-row' },
-                  h('span', { className: 'ags-name' }, sk.name),
-                  h('button', { className: 'ags-btn', onClick: function () { removeItem('skill', sk.name) } }, '移除'))
-              })
-            : h('div', { className: 'ags-empty' }, '暂无已同步的 skill'))
+        ? h('div', null,
+            activeCard && activeCard.mcp.length
+              ? activeCard.mcp.map(function (name) {
+                  return h('div', { key: 'st-' + activeCard.name + '-mcp-' + name, className: 'ags-row' },
+                    h('span', { className: 'ags-name' }, 'mcp-' + name),
+                    h('button', { className: 'ags-btn', onClick: function () { toggleItem('mcp', name, false) } }, '停用'),
+                    h('button', { className: 'ags-btn', onClick: function () { removeItem('mcp', name) } }, '移除'))
+                })
+              : null,
+            disabledMcp.length
+              ? disabledMcp.map(function (m) {
+                  return h('div', { key: 'st-dis-mcp-' + m.name, className: 'ags-row ags-off' },
+                    h('span', { className: 'ags-name' }, 'mcp-' + m.name + '（已停用）'),
+                    h('button', { className: 'ags-btn', onClick: function () { toggleItem('mcp', m.name, true) } }, '启用'))
+                })
+              : null,
+            (!activeCard || !activeCard.mcp.length) && !disabledMcp.length
+              ? h('div', { className: 'ags-empty' }, '暂无已同步的 MCP')
+              : null)
+        : h('div', null,
+            dshSkillList.length
+              ? dshSkillList.map(function (sk) {
+                  return h('div', { key: 'st-skill-' + sk.name, className: 'ags-row' },
+                    h('span', { className: 'ags-name' }, sk.name),
+                    h('button', { className: 'ags-btn', onClick: function () { toggleItem('skill', sk.name, false) } }, '停用'),
+                    h('button', { className: 'ags-btn', onClick: function () { removeItem('skill', sk.name) } }, '移除'))
+                })
+              : null,
+            disabledSkills.length
+              ? disabledSkills.map(function (s) {
+                  return h('div', { key: 'st-dis-skill-' + s.name, className: 'ags-row ags-off' },
+                    h('span', { className: 'ags-name' }, s.name + '（已停用）'),
+                    h('button', { className: 'ags-btn', onClick: function () { toggleItem('skill', s.name, true) } }, '启用'))
+                })
+              : null,
+            !dshSkillList.length && !disabledSkills.length
+              ? h('div', { className: 'ags-empty' }, '暂无已同步的 skill')
+              : null)
 
       return h('div', { className: 'ags-panel' },
         h('div', { className: 'ags-h' },
           h('span', { className: 'ags-title' }, 'MCP/Skills同步'),
           h('button', { className: 'ags-btn', onClick: function () { loadAll() }, disabled: loading }, loading ? '加载中…' : '🔄 刷新'),
-          h('span', { className: 'ags-sub' }, '扫描并同步本机各 agent 的 MCP 与 skill')),
+          h('span', { className: 'ags-sub' }, '扫描、同步并启停本机各 agent 的 MCP 与 skill')),
 
         (function () {
           var moreActive = moreOpen || MORE_TABS.indexOf(tab) >= 0
