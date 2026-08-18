@@ -1,0 +1,11 @@
+# Bundle patch: inserting the plugin row into a profile composition.
+#
+# When this package is listed as a profile bundle (e.g. in
+# $DSH_HOME/profiles/<name>/package.json `dsh.profile.bundles`), this patch
+# inserts the `dsh-agent-sync` row so the plugin mounts automatically.
+#
+# Manual install (no bundle): add the same insert to your profile's
+# cordis.patch.yml instead.
+- insert:
+    - id: dsh-agent-sync
+      name: 'dsh-agent-sync'

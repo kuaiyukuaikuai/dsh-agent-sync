@@ -1,0 +1,14 @@
+{
+  "name": "dsh-agent-sync",
+  "owner": "kuaiyukuaikuai",
+  "url": "https://github.com/kuaiyukuaikuai/dsh-agent-sync",
+  "page": "https://awesome-dsh-plugin.com/p/kuaiyukuaikuai/dsh-agent-sync/",
+  "category": "tools",
+  "description": {
+    "en": "Scans other AI agents on this machine (Codex, Claude Code, cc-switch, Hermes, opencode, Gemini, Grok, Kimi, CodeBuddy, Trae, OpenClaw, Qoder, WorkBuddy, Zcode, Cursor, Windsurf, Cline, Roo Code, Qwen Code, ...) and one-click syncs their MCP servers and skills into DSH: MCP servers become dsh-mcp-client instances in each profile's cordis.patch.yml, skills are copied into ~/.dsh/skills. Includes a settings panel (MCP/Skills同步) with per-source tabs, select-all and a profile-grouped status view.",
+    "zh": "扫描本机其他 AI agent（Codex、Claude Code、cc-switch、Hermes、opencode、Gemini、Grok、Kimi、CodeBuddy、Trae、OpenClaw、Qoder、WorkBuddy、Zcode、Cursor、Windsurf、Cline、Roo Code、Qwen Code 等 20+ 种）的 MCP 服务器与 Skills，一键同步进 DSH：MCP 以 dsh-mcp-client 实例写入各 profile 的 cordis.patch.yml，Skills 拷入 ~/.dsh/skills。内置「MCP/Skills同步」设置面板：来源 Tab 分类、全选、按 profile 分组的现状视图。"
+  },
+  "npm": null,
+  "install": "dsh plugin --profile web add github:kuaiyukuaikuai/dsh-agent-sync",
+  "added": "2026-08-18"
+}

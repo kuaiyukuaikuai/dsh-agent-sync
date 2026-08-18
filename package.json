@@ -1,0 +1,70 @@
+{
+  "name": "dsh-agent-sync",
+  "version": "0.1.0",
+  "description": "DSH plugin that scans other AI agents on this machine (Codex, Claude Code, cc-switch, custom sources) and one-click syncs their MCP servers and skills into DeepSeek Harness.",
+  "type": "module",
+  "main": "index.mjs",
+  "exports": {
+    ".": "./index.mjs",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.mjs",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [],
+      "platform": "web",
+      "immediately": true
+    }
+  },
+  "scripts": {
+    "test": "node --test index.test.mjs"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": ">=0.1.0-rc.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-tools": ">=0.1.0-rc.0"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "mcp",
+    "skills",
+    "codex",
+    "claude-code",
+    "cc-switch",
+    "hermes",
+    "opencode",
+    "gemini",
+    "grok",
+    "kimi",
+    "codebuddy",
+    "trae",
+    "openclaw",
+    "qoder",
+    "workbuddy",
+    "sync",
+    "plugin"
+  ],
+  "license": "MIT",
+  "author": "kuaiyukuaikuai",
+  "homepage": "https://github.com/kuaiyukuaikuai/dsh-agent-sync#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kuaiyukuaikuai/dsh-agent-sync.git"
+  }
+}
