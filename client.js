@@ -118,8 +118,18 @@
     var selMcp = state[0].selMcp || {}
     var selSkill = state[0].selSkill || {}
     var form = state[0].form || { id: '', label: '', kind: 'dir', path: '', mcpKey: '', section: '' }
+    var overrides = state[0].overrides || {}
     var setState = state[1]
     var upd = function (patch) { setState(function (s) { return Object.assign({}, s, patch) }) }
+    function overrideKey(type, name) { return type + ':' + name }
+    function getEnabled(type, name, fallback) {
+      var k = overrideKey(type, name)
+      return k in overrides ? overrides[k] : !!fallback
+    }
+    function setOverride(type, name, enabled) {
+      var k = overrideKey(type, name)
+      upd({ overrides: Object.assign({}, overrides, { [k]: enabled }) })
+    }
 
     function loadAll() {
       upd({ loading: true })
@@ -178,8 +188,9 @@
 
     function toggleItem(type, name, enabled) {
       call('toggle', { type: type, name: name, enabled: enabled }).then(function () {
+        // 只更新本地覆盖状态：卡片原地变色，不重排；下次刷新/重开才按已停用置底
+        setOverride(type, name, enabled)
         upd({ msg: (enabled ? '已启用 ' : '已停用 ') + name })
-        loadAll()
       }).catch(function (e) { upd({ msg: '操作失败: ' + String((e && e.message) || e) }) })
     }
 
@@ -273,44 +284,48 @@
       return c.transport === 'stdio' ? (c.command || '') : (c.url || '')
     }
     var manMcpCards = (activeCard ? activeCard.mcp : []).map(function (name) {
-      return h('div', { key: 'man-mcp-' + name, className: 'ags-card' },
+      var on = getEnabled('mcp', name, true)
+      return h('div', { key: 'man-mcp-' + name, className: 'ags-card' + (on ? '' : ' ags-off') },
         h('div', { className: 'ags-card-head' },
           h('span', { className: 'ags-name', style: { flex: '1 1 auto' } }, 'mcp-' + name),
-          h('span', { className: 'ags-badge ags-badge-on' }, '启用')),
+          h('span', { className: 'ags-badge' + (on ? ' ags-badge-on' : ' ags-badge-off') }, on ? '启用' : '已停用')),
         h('div', { className: 'ags-card-meta' }, mcpMeta(name) || 'stdio'),
         h('div', { className: 'ags-card-foot' },
           h('button', { className: 'ags-btn', onClick: function () { removeItem('mcp', name) } }, '移除'),
-          ToggleSwitch(true, function (v) { toggleItem('mcp', name, v) })))
+          ToggleSwitch(on, function (v) { toggleItem('mcp', name, v) })))
     })
     var manMcpDisabledCards = disabledMcp.map(function (m) {
-      return h('div', { key: 'man-mcp-off-' + m.name, className: 'ags-card ags-off' },
+      var on = getEnabled('mcp', m.name, false)
+      return h('div', { key: 'man-mcp-off-' + m.name, className: 'ags-card' + (on ? '' : ' ags-off') },
         h('div', { className: 'ags-card-head' },
           h('span', { className: 'ags-name', style: { flex: '1 1 auto' } }, 'mcp-' + m.name),
-          h('span', { className: 'ags-badge ags-badge-off' }, '已停用')),
+          h('span', { className: 'ags-badge' + (on ? ' ags-badge-on' : ' ags-badge-off') }, on ? '启用' : '已停用')),
         h('div', { className: 'ags-card-meta' }, mcpMeta(m.name) || 'stdio'),
         h('div', { className: 'ags-card-foot' },
           h('button', { className: 'ags-btn', onClick: function () { removeItem('mcp', m.name) } }, '移除'),
-          ToggleSwitch(false, function (v) { toggleItem('mcp', m.name, v) })))
+          ToggleSwitch(on, function (v) { toggleItem('mcp', m.name, v) })))
     })
     var manSkillCards = dshSkillList.map(function (sk) {
-      return h('div', { key: 'man-skill-' + sk.name, className: 'ags-card' },
+      var on = getEnabled('skill', sk.name, true)
+      return h('div', { key: 'man-skill-' + sk.name, className: 'ags-card' + (on ? '' : ' ags-off') },
         h('div', { className: 'ags-card-head' },
           h('span', { className: 'ags-name', style: { flex: '1 1 auto' } }, sk.name),
-          h('span', { className: 'ags-badge ags-badge-on' }, '启用')),
+          h('span', { className: 'ags-badge' + (on ? ' ags-badge-on' : ' ags-badge-off') }, on ? '启用' : '已停用')),
         h('div', { className: 'ags-card-desc' }, String(sk.description || '')),
         h('div', { className: 'ags-card-foot' },
           h('button', { className: 'ags-btn', onClick: function () { removeItem('skill', sk.name) } }, '移除'),
-          ToggleSwitch(true, function (v) { toggleItem('skill', sk.name, v) })))
+          ToggleSwitch(on, function (v) { toggleItem('skill', sk.name, v) })))
     })
     var manSkillDisabledCards = disabledSkills.map(function (s) {
-      return h('div', { key: 'man-skill-off-' + s.name, className: 'ags-card ags-off' },
+      var on = getEnabled('skill', s.name, false)
+      return h('div', { key: 'man-skill-off-' + s.name, className: 'ags-card' + (on ? '' : ' ags-off') },
         h('div', { className: 'ags-card-head' },
           h('span', { className: 'ags-name', style: { flex: '1 1 auto' } }, s.name),
-          h('span', { className: 'ags-badge ags-badge-off' }, '已停用')),
+          h('span', { className: 'ags-badge' + (on ? ' ags-badge-on' : ' ags-badge-off') }, on ? '启用' : '已停用')),
         h('div', { className: 'ags-card-desc' }, '(已停用，SKILL.md 已改名 .disabled)'),
         h('div', { className: 'ags-card-foot' },
           h('button', { className: 'ags-btn', onClick: function () { removeItem('skill', s.name) } }, '移除'),
-          ToggleSwitch(false, function (v) { toggleItem('skill', s.name, v) })))
+          ToggleSwitch(on, function (v) { toggleItem('skill', s.name, v) })))
     })
 
     var syncBody = syncTab === 'mcp'
