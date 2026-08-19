@@ -149,6 +149,8 @@ window.__ModuleLoader__.load({
     var skillScope = state[0].skillScope || 'global'
     var skillSearch = state[0].skillSearch || ''
     var showAdd = !!state[0].showAdd
+    var showAddMcp = !!state[0].showAddMcp
+    var addMcpForm = state[0].addMcpForm || { name: '', transport: 'stdio', command: '', args: '', url: '', env: '', headers: '' }
     var addPath = state[0].addPath || ''
     var addScope = state[0].addScope || ''
     var setState = state[1]
@@ -579,6 +581,55 @@ window.__ModuleLoader__.load({
                 h('span', { className: 'ags-sub' }, '文件夹需包含 SKILL.md（目录束）；单文件需为带 frontmatter 的 .md'))))))
       : null
 
+    function submitAddMcp() {
+      call('add-mcp', addMcpForm).then(function (r) {
+        upd({
+          msg: r && r.ok ? ('已添加 MCP ' + r.name) : ('添加失败: ' + (r && r.error)),
+          showAddMcp: false,
+          addMcpForm: { name: '', transport: 'stdio', command: '', args: '', url: '', env: '', headers: '' },
+        })
+        loadAll()
+      }).catch(function (e) { upd({ msg: '添加失败: ' + String((e && e.message) || e) }) })
+    }
+
+    var addMcpModal = showAddMcp
+      ? h('div', { className: 'ags-modal', onClick: function () { upd({ showAddMcp: false }) } },
+          h('div', { className: 'ags-modal-box', onClick: function (e) { stop(e) } },
+            h('div', { className: 'ags-modal-head' },
+              h('span', { className: 'ags-title' }, '添加 MCP 服务器'),
+              h('button', { className: 'ags-btn', onClick: function () { upd({ showAddMcp: false }) } }, '✕ 关闭')),
+            h('div', { className: 'ags-modal-body' },
+              h('div', { className: 'ags-drow' },
+                h('span', { className: 'ags-dkey' }, '名称'),
+                h('input', { className: 'ags-in', style: { flex: '1 1 auto' }, placeholder: 'server-name', value: addMcpForm.name, onChange: function (e) { upd({ addMcpForm: Object.assign({}, addMcpForm, { name: e.target.value }) }) } })),
+              h('div', { className: 'ags-drow' },
+                h('span', { className: 'ags-dkey' }, '传输方式'),
+                h('select', { className: 'ags-in', value: addMcpForm.transport, onChange: function (e) { upd({ addMcpForm: Object.assign({}, addMcpForm, { transport: e.target.value }) }) } },
+                  h('option', { value: 'stdio' }, 'stdio（本地命令）'),
+                  h('option', { value: 'http' }, 'streamable-http（URL）'))),
+              addMcpForm.transport === 'stdio'
+                ? h('div', null,
+                    h('div', { className: 'ags-drow' },
+                      h('span', { className: 'ags-dkey' }, '命令'),
+                      h('input', { className: 'ags-in', style: { flex: '1 1 auto' }, placeholder: 'npx', value: addMcpForm.command, onChange: function (e) { upd({ addMcpForm: Object.assign({}, addMcpForm, { command: e.target.value }) }) } })),
+                    h('div', { className: 'ags-drow' },
+                      h('span', { className: 'ags-dkey' }, '参数'),
+                      h('input', { className: 'ags-in', style: { flex: '1 1 auto' }, placeholder: '-y @modelcontextprotocol/server-github', value: addMcpForm.args, onChange: function (e) { upd({ addMcpForm: Object.assign({}, addMcpForm, { args: e.target.value }) }) } })),
+                    h('div', { className: 'ags-drow' },
+                      h('span', { className: 'ags-dkey' }, '环境变量'),
+                      h('textarea', { className: 'ags-in', style: { flex: '1 1 auto', minHeight: 56, resize: 'vertical', whiteSpace: 'pre' }, placeholder: 'KEY=VALUE，每行一个', value: addMcpForm.env, onChange: function (e) { upd({ addMcpForm: Object.assign({}, addMcpForm, { env: e.target.value }) }) } })))
+                : h('div', null,
+                    h('div', { className: 'ags-drow' },
+                      h('span', { className: 'ags-dkey' }, 'URL'),
+                      h('input', { className: 'ags-in', style: { flex: '1 1 auto' }, placeholder: 'https://…/mcp', value: addMcpForm.url, onChange: function (e) { upd({ addMcpForm: Object.assign({}, addMcpForm, { url: e.target.value }) }) } })),
+                    h('div', { className: 'ags-drow' },
+                      h('span', { className: 'ags-dkey' }, 'Headers'),
+                      h('textarea', { className: 'ags-in', style: { flex: '1 1 auto', minHeight: 56, resize: 'vertical', whiteSpace: 'pre' }, placeholder: 'Authorization: Bearer …\nKey: Value', value: addMcpForm.headers, onChange: function (e) { upd({ addMcpForm: Object.assign({}, addMcpForm, { headers: e.target.value }) }) } }))),
+              h('div', { className: 'ags-foot' },
+                h('span', { className: 'ags-sub' }, '添加到 DSH 的 MCP 客户端（重启后生效）'),
+                h('button', { className: 'ags-btn ags-btn-primary', style: { marginLeft: 'auto' }, disabled: !addMcpForm.name, onClick: submitAddMcp }, '保存')))))
+      : null
+
     // 主面板 Skills：按作用域分组显示（全局 / 工作区）
     function manCardsFor(list, disabledList) {
       return list.map(function (sk) {
@@ -661,8 +712,7 @@ window.__ModuleLoader__.load({
         h('span', { className: 'ags-title' }, 'MCP/Skills同步'),
         h('button', { className: 'ags-btn', onClick: function () { loadAll() }, disabled: loading }, loading ? '加载中…' : '🔄 刷新'),
         gearBtn(),
-        h('span', { className: 'ags-sub' }, '从其他 agent 一键同步 MCP 与 skill 进 DSH'),
-        h('button', { className: 'ags-btn ags-btn-primary', style: { marginLeft: 'auto' }, onClick: function () { upd({ showAdd: true, addScope: syncScope }) } }, '＋ 添加技能')),
+        h('span', { className: 'ags-sub' }, '从其他 agent 一键同步 MCP 与 skill 进 DSH')),
       (function () {
         var moreActive = moreOpen || MORE_TABS.indexOf(tab) >= 0
         function tabBtn(t) {
@@ -679,7 +729,11 @@ window.__ModuleLoader__.load({
       h('div', { className: 'ags-sec' },
         h('div', { className: 'ags-tabs' },
           h('button', { className: 'ags-tab' + (syncTab === 'mcp' ? ' ags-tab-active' : ''), onClick: function () { upd({ syncTab: 'mcp' }) } }, '可同步的 MCP (' + visibleMcp.length + ')'),
-          h('button', { className: 'ags-tab' + (syncTab === 'skills' ? ' ags-tab-active' : ''), onClick: function () { upd({ syncTab: 'skills' }) } }, '可同步的 Skills (' + visibleSkills.length + ')')
+          h('button', { className: 'ags-tab' + (syncTab === 'skills' ? ' ags-tab-active' : ''), onClick: function () { upd({ syncTab: 'skills' }) } }, '可同步的 Skills (' + visibleSkills.length + ')'),
+          h('span', { style: { flex: '1 1 auto' } }),
+          h('button', { className: 'ags-btn ags-btn-primary', onClick: function () {
+            if (syncTab === 'mcp') { upd({ showAddMcp: true }) } else { upd({ showAdd: true, addScope: syncScope }) }
+          } }, syncTab === 'mcp' ? '＋ 添加 MCP' : '＋ 添加 Skill')
         ),
         syncBody),
       h('div', { className: 'ags-sec' },
@@ -704,7 +758,8 @@ window.__ModuleLoader__.load({
       msg ? h('div', { className: 'ags-msg' + msgClass }, msg) : null,
       detailModal,
       settingsModal,
-      addSkillModal)
+      addSkillModal,
+      addMcpModal)
   }
 
   function apply(ctx) {

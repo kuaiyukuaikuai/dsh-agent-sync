@@ -1033,6 +1033,70 @@ async function addSkillFiles(payload) {
   return { ok: true, name: safe, dst, scope }
 }
 
+function parseKeyValueLines(text) {
+  const out = {}
+  String(text || '').split(/\r?\n/).forEach((line) => {
+    const eq = line.indexOf('=')
+    if (eq > 0) {
+      const k = line.slice(0, eq).trim()
+      if (k) out[k] = line.slice(eq + 1).trim()
+    }
+  })
+  return out
+}
+
+function parseHeaderLines(text) {
+  const out = {}
+  String(text || '').split(/\r?\n/).forEach((line) => {
+    const c = line.indexOf(':')
+    if (c > 0) {
+      const k = line.slice(0, c).trim()
+      if (k) out[k] = line.slice(c + 1).trim()
+    }
+  })
+  return out
+}
+
+// 手动添加一个 MCP 服务器（写入 state + 各 profile 的 cordis.patch.yml）。
+async function addMcp(payload) {
+  const name = String((payload && payload.name) || '').trim()
+  if (!name) return { ok: false, error: 'name is required' }
+  let raw
+  if (payload && (payload.transport === 'http' || payload.transport === 'streamable-http' || (payload.url && !payload.command))) {
+    raw = { type: 'http', url: String(payload.url || '').trim(), headers: parseHeaderLines(payload.headers) }
+  } else {
+    raw = {
+      type: 'stdio',
+      command: String((payload && payload.command) || '').trim(),
+      args: String((payload && payload.args) || '').trim().split(/\s+/).filter(Boolean),
+      env: parseKeyValueLines(payload.env),
+    }
+  }
+  if (!raw.command && !raw.url) return { ok: false, error: 'command (stdio) or url (http) is required' }
+  const norm = normalizeMcp(name, raw, 'manual')
+  if (norm.error) return { ok: false, error: norm.error }
+  const state = await readState()
+  if (state.mcp[norm.name]) return { ok: false, error: 'MCP server already exists: ' + norm.name }
+  state.mcp[norm.name] = {
+    source: 'manual', entryId: 'mcp-' + norm.name, config: norm.config, enabled: true,
+    syncedAt: new Date().toISOString(),
+  }
+  await writeState(state)
+  const entries = enabledMcpEntries(state)
+  const profileResults = []
+  for (const p of await profilesWithPatch()) {
+    const text = await readText(p.patchPath)
+    const next = rebuildPatchText(text, entries)
+    if (next !== text) {
+      await writeText(p.patchPath, next)
+      profileResults.push({ profile: p.name, updated: true })
+    } else {
+      profileResults.push({ profile: p.name, updated: false })
+    }
+  }
+  return { ok: true, name: norm.name, config: norm.config, profiles: profileResults }
+}
+
 async function status(ctx) {
   const state = await readState()
   let skillProvider = 'unavailable'
@@ -1443,6 +1507,13 @@ function registerRoutes(ctx) {
     try {
       const a = await readArgs(req)
       json(res, await addSkillFiles(a))
+    } catch (e) { json(res, { ok: false, error: String((e && e.message) || e) }, 500) }
+  })
+
+  route('/dsh-agent-sync/add-mcp', async (req, res) => {
+    try {
+      const a = await readArgs(req)
+      json(res, await addMcp(a))
     } catch (e) { json(res, { ok: false, error: String((e && e.message) || e) }, 500) }
   })
 
