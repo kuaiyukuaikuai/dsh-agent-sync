@@ -699,9 +699,16 @@ window.__ModuleLoader__.load({
         h('span', { className: 'ags-sub' }, skillProvider === 'unavailable' ? '（当前会话未挂载 skill 提供方，模型暂不可用，文件已就位）' : '启停 / 移除已同步到 DSH 的 MCP 与 skill'),
         h('button', { className: 'ags-btn ags-btn-primary', style: { marginLeft: 'auto' }, onClick: function () { upd({ view: 'sync' }) } }, 'MCP/Skills同步 →')),
       h('div', { className: 'ags-sec', style: { border: 'none', boxShadow: 'none', background: 'transparent', padding: 0 } },
-        h('div', { className: 'ags-switchbar' },
-          h('button', { className: 'ags-tab' + (stTab === 'mcp' ? ' ags-tab-active' : ''), onClick: function () { upd({ stTab: 'mcp' }) } }, 'MCP'),
-          h('button', { className: 'ags-tab' + (stTab === 'skills' ? ' ags-tab-active' : ''), onClick: function () { upd({ stTab: 'skills' }) } }, 'Skills')
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, margin: '6px 0 10px' } },
+          h('span', { style: { flex: '1 1 0' } }),
+          h('div', { className: 'ags-switchbar', style: { margin: 0 } },
+            h('button', { className: 'ags-tab' + (stTab === 'mcp' ? ' ags-tab-active' : ''), onClick: function () { upd({ stTab: 'mcp' }) } }, 'MCP'),
+            h('button', { className: 'ags-tab' + (stTab === 'skills' ? ' ags-tab-active' : ''), onClick: function () { upd({ stTab: 'skills' }) } }, 'Skills')
+          ),
+          h('span', { style: { flex: '1 1 0', display: 'flex', justifyContent: 'flex-end' } },
+            h('button', { className: 'ags-btn ags-btn-primary', onClick: function () {
+              if (stTab === 'mcp') { upd({ showAddMcp: true }) } else { upd({ showAdd: true, addScope: syncScope }) }
+            } }, stTab === 'mcp' ? '＋ 添加 MCP' : '＋ 添加 Skill'))
         ),
         activeCard ? statusBody : h('div', { className: 'ags-empty' }, '暂无 profile 数据')))
 
@@ -729,11 +736,7 @@ window.__ModuleLoader__.load({
       h('div', { className: 'ags-sec' },
         h('div', { className: 'ags-tabs' },
           h('button', { className: 'ags-tab' + (syncTab === 'mcp' ? ' ags-tab-active' : ''), onClick: function () { upd({ syncTab: 'mcp' }) } }, '可同步的 MCP (' + visibleMcp.length + ')'),
-          h('button', { className: 'ags-tab' + (syncTab === 'skills' ? ' ags-tab-active' : ''), onClick: function () { upd({ syncTab: 'skills' }) } }, '可同步的 Skills (' + visibleSkills.length + ')'),
-          h('span', { style: { flex: '1 1 auto' } }),
-          h('button', { className: 'ags-btn ags-btn-primary', onClick: function () {
-            if (syncTab === 'mcp') { upd({ showAddMcp: true }) } else { upd({ showAdd: true, addScope: syncScope }) }
-          } }, syncTab === 'mcp' ? '＋ 添加 MCP' : '＋ 添加 Skill')
+          h('button', { className: 'ags-tab' + (syncTab === 'skills' ? ' ags-tab-active' : ''), onClick: function () { upd({ syncTab: 'skills' }) } }, '可同步的 Skills (' + visibleSkills.length + ')')
         ),
         syncBody),
       h('div', { className: 'ags-sec' },
