@@ -13,6 +13,7 @@
 // so there are no runtime subprocess or helper-script dependencies.
 
 import { homedir } from 'node:os'
+import { execFileSync } from 'node:child_process'
 import { basename, dirname, join } from 'node:path'
 import { cp, mkdir, readFile, readdir, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { DatabaseSync } from 'node:sqlite'
@@ -1145,6 +1146,131 @@ async function migrateSkill(payload) {
   return { ok: migrated.length > 0, migrated, errors, target: target || '(global)', mode }
 }
 
+// ---------------------------------------------------------------------------
+// Skill groups（分组）：groups.json = { groups: [{ id, name, skills: [names] }] }
+// ---------------------------------------------------------------------------
+
+const GROUPS_FILE = join(DIR, 'groups.json')
+
+async function readGroups() {
+  const text = await readText(GROUPS_FILE)
+  if (!text) return []
+  try {
+    const j = JSON.parse(text)
+    return Array.isArray(j.groups) ? j.groups : []
+  } catch { return [] }
+}
+async function writeGroups(groups) {
+  await writeText(GROUPS_FILE, JSON.stringify({ groups }, null, 2))
+}
+function slugId(name) {
+  return String(name).toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-').replace(/^-|-$/g, '') || 'g' + Date.now().toString(36)
+}
+async function saveGroup(payload) {
+  const name = String((payload && payload.name) || '').trim()
+  if (!name) return { ok: false, error: 'group name is required' }
+  const skills = Array.isArray(payload && payload.skills) ? payload.skills.map((s) => sanitizeSkillName(s)).filter(Boolean) : []
+  const groups = await readGroups()
+  const id = (payload && payload.id) || slugId(name + '-' + Date.now().toString(36))
+  const idx = groups.findIndex((g) => g.id === id)
+  const entry = { id, name, skills }
+  if (idx >= 0) groups[idx] = entry; else groups.push(entry)
+  await writeGroups(groups)
+  return { ok: true, groups }
+}
+async function deleteGroup(id) {
+  const groups = await readGroups()
+  const next = groups.filter((g) => g.id !== id)
+  await writeGroups(next)
+  return { ok: true, groups: next }
+}
+
+// 读取某个技能的 SKILL.md 正文（供详情弹窗展示内容）。
+async function skillContent(name) {
+  const state = await readState()
+  const safe = sanitizeSkillName(name)
+  const rec = state.skills[safe]
+  if (!rec || !rec.dst) return { ok: false, error: `not a managed skill: ${safe}` }
+  let file = null
+  if (rec.kind === 'flat') {
+    file = rec.dst.endsWith('.disabled') ? rec.dst : rec.dst
+  } else {
+    const md = join(rec.dst, 'SKILL.md')
+    const mdD = join(rec.dst, 'SKILL.md.disabled')
+    file = (await exists(md)) ? md : (await exists(mdD) ? mdD : null)
+  }
+  if (!file || !(await exists(file))) return { ok: false, error: `skill file missing: ${rec.dst}` }
+  const content = await readText(file)
+  return { ok: true, name: safe, content: content || '' }
+}
+
+// 解压 zip（Windows：优先 tar（bsdtar），回退 PowerShell Expand-Archive）。
+function extractZip(zipPath, outDir) {
+  try {
+    execFileSync('tar', ['-xf', zipPath, '-C', outDir], { stdio: 'pipe', windowsHide: true })
+    return
+  } catch { /* fall through */ }
+  execFileSync(
+    'powershell.exe',
+    ['-NoProfile', '-Command', `Expand-Archive -LiteralPath '${zipPath}' -DestinationPath '${outDir}' -Force`],
+    { stdio: 'pipe', windowsHide: true },
+  )
+}
+
+// 从解压目录里找技能结构：优先 <dir>/SKILL.md（目录束），其次顶层 .md（单文件）。
+async function findSkillInExtracted(root) {
+  const names = await listDir(root)
+  for (const n of names) {
+    if (n === '.system' || n.startsWith('__MACOSX')) continue
+    const full = join(root, n)
+    const md = join(full, 'SKILL.md')
+    if (await exists(md)) {
+      const meta = parseSkillFrontmatter((await readText(md)) || '')
+      return { kind: 'bundle', name: meta.name || n, src: full }
+    }
+  }
+  for (const n of names) {
+    if (n.toLowerCase().endsWith('.md')) {
+      const full = join(root, n)
+      const meta = parseSkillFrontmatter((await readText(full)) || '')
+      return { kind: 'flat', name: meta.name || n.replace(/\.md$/i, ''), src: full }
+    }
+  }
+  return null
+}
+
+// 通过 .zip 压缩包添加技能（data = base64）。
+async function addSkillZip(payload) {
+  const scope = String((payload && payload.scope) || '').trim()
+  const data = String((payload && payload.data) || '')
+  if (!data) return { ok: false, error: 'no zip data' }
+  const tmp = join(DIR, 'tmp-' + Date.now())
+  const zipPath = join(tmp, 'skill.zip')
+  const outRoot = join(tmp, 'out')
+  await mkdir(outRoot, { recursive: true })
+  try {
+    await writeFile(zipPath, Buffer.from(data, 'base64'))
+    extractZip(zipPath, outRoot)
+    const found = await findSkillInExtracted(outRoot)
+    if (!found) return { ok: false, error: 'zip 内未找到技能（需要包含 SKILL.md 的目录或 .md 文件）' }
+    const skillsRoot = scope ? workspaceSkillRoot(scope) : join(DSH_HOME, 'skills')
+    const safe = sanitizeSkillName(found.name)
+    const dst = found.kind === 'flat' ? join(skillsRoot, `${safe}.md`) : join(skillsRoot, safe)
+    await mkdir(skillsRoot, { recursive: true })
+    if (await exists(dst)) return { ok: false, error: `skill already exists: ${safe}` }
+    await copyPath(found.src, dst)
+    const state = await readState()
+    state.skills[safe] = {
+      source: 'manual-zip', src: found.src, dst, kind: found.kind, mode: 'copy', scope, enabled: true,
+      syncedAt: new Date().toISOString(),
+    }
+    await writeState(state)
+    return { ok: true, name: safe, dst, scope }
+  } finally {
+    await rm(tmp, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
 async function status(ctx) {
   const state = await readState()
   let skillProvider = 'unavailable'
@@ -1587,6 +1713,29 @@ function registerRoutes(ctx) {
     try {
       const a = await readArgs(req)
       json(res, await migrateSkill(a))
+    } catch (e) { json(res, { ok: false, error: String((e && e.message) || e) }, 500) }
+  })
+
+  route('/dsh-agent-sync/add-skill-zip', async (req, res) => {
+    try {
+      const a = await readArgs(req)
+      json(res, await addSkillZip(a))
+    } catch (e) { json(res, { ok: false, error: String((e && e.message) || e) }, 500) }
+  })
+
+  route('/dsh-agent-sync/skill-content', async (req, res) => {
+    try {
+      const a = await readArgs(req)
+      json(res, await skillContent(a.name))
+    } catch (e) { json(res, { ok: false, error: String((e && e.message) || e) }, 500) }
+  })
+
+  route('/dsh-agent-sync/groups', async (req, res) => {
+    try {
+      const a = await readArgs(req)
+      if (a.action === 'create' || a.action === 'save') json(res, await saveGroup(a))
+      else if (a.action === 'delete') json(res, await deleteGroup(a.id))
+      else json(res, await readGroups())
     } catch (e) { json(res, { ok: false, error: String((e && e.message) || e) }, 500) }
   })
 

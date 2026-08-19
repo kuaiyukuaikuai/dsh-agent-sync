@@ -21,6 +21,7 @@ window.__ModuleLoader__.load({
         '.ags-btn:disabled{opacity:.5;cursor:default}' +
         '.ags-btn-primary{border-color:var(--dsw-alias-brand-primary,#4f6ef7);color:var(--dsw-alias-brand-primary,#4f6ef7)}' +
         '.ags-btn-primary:hover{background:var(--dsw-alias-brand-primary,#4f6ef7);color:#fff}' +
+        '.ags-btn-danger{border-color:var(--dsw-alias-state-error-primary,#dc2626);color:var(--dsw-alias-state-error-primary,#dc2626);background:rgba(220,38,38,.08)}' +
         '.ags-tabs{display:flex;gap:6px;margin:4px 0;flex-wrap:wrap}' +
         '.ags-switchbar{display:flex;justify-content:center;gap:6px;margin:6px 0 10px}' +
         '.ags-tab{font:inherit;color:var(--dsw-alias-label-secondary,#6b7280);cursor:pointer;white-space:nowrap;background:color-mix(in srgb,var(--dsw-alias-border-l2,#d9dde3) 22%,transparent);border:1px solid transparent;border-radius:999px;padding:2px 10px;font-size:12px;line-height:1.6}' +
@@ -154,6 +155,12 @@ window.__ModuleLoader__.load({
     var migrateSel = state[0].migrateSel || {}
     var migrateTarget = state[0].migrateTarget || ''
     var migrateMode = state[0].migrateMode || 'move'
+    var groups = state[0].groups || []
+    var groupFilter = state[0].groupFilter || ''
+    var showGroup = !!state[0].showGroup
+    var groupForm = state[0].groupForm || { id: '', name: '', skills: {} }
+    var skillBody = state[0].skillBody || {}
+    var confirmDel = state[0].confirmDel || null
     var addMcpForm = state[0].addMcpForm || { name: '', transport: 'stdio', command: '', args: '', url: '', env: '', headers: '' }
     var addPath = state[0].addPath || ''
     var addScope = state[0].addScope || ''
@@ -169,6 +176,23 @@ window.__ModuleLoader__.load({
       upd({ overrides: Object.assign({}, overrides, { [k]: enabled }) })
     }
 
+    // 删除二次确认：第一次点击武装，3 秒未确认自动还原
+    var delTimer = null
+    function onRemove(type, name) {
+      if (confirmDel && confirmDel.type === type && confirmDel.name === name) {
+        if (delTimer) { clearTimeout(delTimer); delTimer = null }
+        upd({ confirmDel: null })
+        removeItem(type, name)
+      } else {
+        if (delTimer) clearTimeout(delTimer)
+        upd({ confirmDel: { type: type, name: name } })
+        delTimer = setTimeout(function () { delTimer = null; upd({ confirmDel: null }) }, 3000)
+      }
+    }
+    function delLabel(type, name, base) {
+      return confirmDel && confirmDel.type === type && confirmDel.name === name ? '确认删除?' : base
+    }
+
     function loadAll() {
       upd({ loading: true })
       Promise.all([
@@ -176,11 +200,13 @@ window.__ModuleLoader__.load({
         call('status', {}),
         call('sources', { action: 'list' }),
         call('config', { action: 'get' }),
+        call('groups', { action: 'list' }),
       ]).then(function (r) {
         var c = r[3] || null
         upd({
           data: r[0], stat: r[1], sources: Array.isArray(r[2]) ? r[2] : [],
           cfg: c, cfgDraft: c ? { skillSyncMode: c.skillSyncMode || 'copy', syncProfiles: c.syncProfiles || 'all' } : cfgDraft,
+          groups: Array.isArray(r[4]) ? r[4] : [],
           loading: false,
         })
       }).catch(function (e) { upd({ msg: '加载失败: ' + String((e && e.message) || e), loading: false }) })
@@ -317,7 +343,18 @@ window.__ModuleLoader__.load({
     var msgClass = msg ? (msg.indexOf('失败') >= 0 ? ' ags-err' : msg.indexOf('✓') >= 0 ? ' ags-ok' : '') : ''
 
     function stop(e) { if (e && e.stopPropagation) e.stopPropagation() }
-    function openDetail(type, item) { upd({ detail: { type: type, item: item } }) }
+    function openDetail(type, item) {
+      upd({ detail: { type: type, item: item } })
+      if (type === 'skill' && item && item.name && !skillBody[item.name]) {
+        call('skill-content', { name: item.name }).then(function (r) {
+          if (r && r.ok) {
+            var nb = Object.assign({}, skillBody)
+            nb[r.name] = r.content
+            upd({ skillBody: nb })
+          }
+        }).catch(function () { /* ignore */ })
+      }
+    }
     function closeDetail() { upd({ detail: null }) }
 
     // 可同步列表：卡片 + 勾选（点击卡片看详情；来源只在详情页显示）
@@ -360,7 +397,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'ags-badge' + (on ? ' ags-badge-on' : ' ags-badge-off') }, on ? '启用' : '已停用')),
         h('div', { className: 'ags-card-meta' }, mcpMeta(name) || 'stdio'),
         h('div', { className: 'ags-card-foot' },
-          h('button', { className: 'ags-btn', onClick: function (e) { stop(e); removeItem('mcp', name) } }, '移除'),
+          h('button', { className: 'ags-btn' + (confirmDel && confirmDel.type === 'mcp' && confirmDel.name === name ? ' ags-btn-danger' : ''), onClick: function (e) { stop(e); onRemove('mcp', name) } }, delLabel('mcp', name, '移除')),
           h('label', { onClick: stop }, ToggleSwitch(on, function (v) { toggleItem('mcp', name, v) }))))
     })
     var manMcpDisabledCards = disabledMcp.map(function (m) {
@@ -371,7 +408,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'ags-badge' + (on ? ' ags-badge-on' : ' ags-badge-off') }, on ? '启用' : '已停用')),
         h('div', { className: 'ags-card-meta' }, mcpMeta(m.name) || 'stdio'),
         h('div', { className: 'ags-card-foot' },
-          h('button', { className: 'ags-btn', onClick: function (e) { stop(e); removeItem('mcp', m.name) } }, '移除'),
+          h('button', { className: 'ags-btn' + (confirmDel && confirmDel.type === 'mcp' && confirmDel.name === m.name ? ' ags-btn-danger' : ''), onClick: function (e) { stop(e); onRemove('mcp', m.name) } }, delLabel('mcp', m.name, '移除')),
           h('label', { onClick: stop }, ToggleSwitch(on, function (v) { toggleItem('mcp', m.name, v) }))))
     })
     var manSkillCards = dshSkillList.map(function (sk) {
@@ -383,7 +420,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'ags-badge' + (mode === 'link' ? ' ags-badge-link' : (on ? ' ags-badge-on' : ' ags-badge-off')) }, mode === 'link' ? '🔗 软连接' : (on ? '启用' : '已停用'))),
         h('div', { className: 'ags-card-desc' }, String(sk.description || '')),
         h('div', { className: 'ags-card-foot' },
-          h('button', { className: 'ags-btn', onClick: function (e) { stop(e); removeItem('skill', sk.name) } }, '移除'),
+          h('button', { className: 'ags-btn' + (confirmDel && confirmDel.type === 'skill' && confirmDel.name === sk.name ? ' ags-btn-danger' : ''), onClick: function (e) { stop(e); onRemove('skill', sk.name) } }, delLabel('skill', sk.name, '移除')),
           h('label', { onClick: stop }, ToggleSwitch(on, function (v) { toggleItem('skill', sk.name, v) }))))
     })
     var manSkillDisabledCards = disabledSkills.map(function (s) {
@@ -395,7 +432,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'ags-badge' + (mode === 'link' ? ' ags-badge-link' : ' ags-badge-off') }, mode === 'link' ? '🔗 软连接' : '已停用')),
         h('div', { className: 'ags-card-desc' }, mode === 'link' ? '(软连接已移除，启用后重新链接)' : '(已停用，SKILL.md 已改名 .disabled)'),
         h('div', { className: 'ags-card-foot' },
-          h('button', { className: 'ags-btn', onClick: function (e) { stop(e); removeItem('skill', s.name) } }, '移除'),
+          h('button', { className: 'ags-btn' + (confirmDel && confirmDel.type === 'skill' && confirmDel.name === s.name ? ' ags-btn-danger' : ''), onClick: function (e) { stop(e); onRemove('skill', s.name) } }, delLabel('skill', s.name, '移除')),
           h('label', { onClick: stop }, ToggleSwitch(on, function (v) { toggleItem('skill', s.name, v) }))))
     })
 
@@ -434,6 +471,13 @@ window.__ModuleLoader__.load({
         pushRow('描述', s.description)
         pushRow('仓库', s.repo)
         pushRow('路径', s.path)
+        var body = s.name ? skillBody[s.name] : null
+        if (body !== undefined && body !== null) {
+          detailRows.push(h('div', { key: 'skill-body', className: 'ags-drow', style: { flexDirection: 'column' } },
+            h('span', { className: 'ags-dkey' }, '内容'),
+            h('pre', { style: { margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12, lineHeight: 1.6, maxHeight: 320, overflow: 'auto', background: 'color-mix(in srgb,var(--dsw-alias-border-l2,#d9dde3) 10%,transparent)', borderRadius: 6, padding: 8 } }, body || '(空)'))
+          )
+        }
       }
     }
     var detailModal = detail
@@ -550,6 +594,73 @@ window.__ModuleLoader__.load({
       e.target.value = ''
     }
 
+    function readFileAsBase64(file) {
+      return new Promise(function (resolve, reject) {
+        var r = new FileReader()
+        r.onload = function () {
+          var s = String(r.result || '')
+          var idx = s.indexOf(',')
+          resolve(idx >= 0 ? s.slice(idx + 1) : s)
+        }
+        r.onerror = reject
+        r.readAsDataURL(file)
+      })
+    }
+
+    function uploadZip(zipFile, scope) {
+      readFileAsBase64(zipFile).then(function (data) {
+        call('add-skill-zip', { scope: scope || '', data: data }).then(function (r) {
+          upd({ msg: r && r.ok ? ('已从 zip 添加技能 ' + r.name) : ('添加失败: ' + (r && r.error)), showAdd: false })
+          loadAll()
+        }).catch(function (e) { upd({ msg: '添加失败: ' + String((e && e.message) || e) }) })
+      })
+    }
+
+    function onPickZip(e) {
+      var f = e.target.files && e.target.files[0]
+      if (!f) return
+      uploadZip(f, addScope)
+      e.target.value = ''
+    }
+
+    // 拖放处理：支持 .zip / .md / 文件夹
+    function onDropAdd(e) {
+      if (e && e.preventDefault) e.preventDefault()
+      var files = e && e.dataTransfer && e.dataTransfer.files
+      if (!files || !files.length) return
+      var zips = []
+      var flatMd = null
+      var folderFiles = []
+      for (var i = 0; i < files.length; i++) {
+        var f = files[i]
+        if (f.webkitRelativePath && f.webkitRelativePath.indexOf('/') >= 0) { folderFiles.push(f) }
+        else if (/\.zip$/i.test(f.name)) { zips.push(f) }
+        else if (/\.md$/i.test(f.name) && !flatMd) { flatMd = f }
+      }
+      if (zips.length) { uploadZip(zips[0], addScope); return }
+      if (folderFiles.length) { onDropFolderFiles(folderFiles); return }
+      if (flatMd) {
+        readFileAsText(flatMd).then(function (content) {
+          uploadSkillFiles('flat', [{ path: flatMd.name, content: content }], addScope)
+        })
+      } else {
+        upd({ msg: '未识别到可添加的技能（支持 .md / .zip / 文件夹）' })
+      }
+    }
+
+    function onDropFolderFiles(fileList) {
+      var files = []
+      var reads = []
+      for (var i = 0; i < fileList.length; i++) {
+        ;(function (f) {
+          reads.push(readFileAsText(f).then(function (content) {
+            files.push({ path: f.webkitRelativePath || f.name, content: content })
+          }))
+        })(fileList[i])
+      }
+      Promise.all(reads).then(function () { uploadSkillFiles('bundle', files, addScope) })
+    }
+
     function addSkillLocal() {
       call('add-skill', { path: addPath, scope: addScope }).then(function (r) {
         upd({ msg: r && r.ok ? ('已添加技能 ' + r.name) : ('添加失败: ' + (r && r.error)), addPath: '', showAdd: false })
@@ -578,11 +689,19 @@ window.__ModuleLoader__.load({
                   h('label', { className: 'ags-btn ags-btn-primary', style: { display: 'inline-block', cursor: 'pointer', marginRight: 8 } },
                     '📁 选择文件夹',
                     h('input', { type: 'file', webkitdirectory: '', directory: '', style: { display: 'none' }, onChange: function (e) { onPickFolder(e) } })),
-                  h('label', { className: 'ags-btn', style: { display: 'inline-block', cursor: 'pointer' } },
+                  h('label', { className: 'ags-btn', style: { display: 'inline-block', cursor: 'pointer', marginRight: 8 } },
                     '📄 选择单个 .md',
-                    h('input', { type: 'file', accept: '.md,text/markdown', style: { display: 'none' }, onChange: function (e) { onPickFile(e) } }))),
+                    h('input', { type: 'file', accept: '.md,text/markdown', style: { display: 'none' }, onChange: function (e) { onPickFile(e) } })),
+                  h('label', { className: 'ags-btn', style: { display: 'inline-block', cursor: 'pointer' } },
+                    '📦 选择 .zip',
+                    h('input', { type: 'file', accept: '.zip,application/zip', style: { display: 'none' }, onChange: function (e) { onPickZip(e) } })))),
+              h('div', { className: 'ags-drow' },
+                h('span', { className: 'ags-dkey' }, '拖放'),
+                h('div', { className: 'ags-dval', style: { border: '1px dashed var(--dsw-alias-border-l2,#d9dde3)', borderRadius: 8, padding: '10px 8px', textAlign: 'center', color: 'var(--dsw-alias-label-tertiary,#8b93a1)' },
+                  onDragOver: function (e) { if (e) e.preventDefault() },
+                  onDrop: function (e) { onDropAdd(e) } }, '将 .md / .zip / 技能文件夹拖到这里')),
               h('div', { className: 'ags-foot' },
-                h('span', { className: 'ags-sub' }, '文件夹需包含 SKILL.md（目录束）；单文件需为带 frontmatter 的 .md'))))))
+                h('span', { className: 'ags-sub' }, '文件夹需包含 SKILL.md（目录束）；单文件需为带 frontmatter 的 .md')))))
       : null
 
     function submitAddMcp() {
@@ -652,11 +771,12 @@ window.__ModuleLoader__.load({
           // 迁移成功后自动切到目标作用域并刷新，让迁移结果可见
           if (migrateTarget === '') { extra = 'global' } else { extra = migrateTarget }
         }
-        upd({
+        var patch = {
           msg: r && r.ok ? ('已' + (migrateMode === 'copy' ? '复制' : '迁移') + ' ' + r.migrated.length + ' 个技能' + (r.errors && r.errors.length ? '；跳过 ' + r.errors.length : '')) : ('迁移失败: ' + (r && r.error)),
           showMigrate: false, migrateSel: {}, migrateTarget: '', migrateMode: 'move',
-          ...(extra ? { skillScope: extra } : {}),
-        })
+        }
+        if (extra) patch.skillScope = extra
+        upd(patch)
         loadAll()
       }).catch(function (e) { upd({ msg: '迁移失败: ' + String((e && e.message) || e) }) })
     }
@@ -701,6 +821,54 @@ window.__ModuleLoader__.load({
                 h('button', { className: 'ags-btn ags-btn-primary', style: { marginLeft: 'auto' }, disabled: skillScope === 'global' && !migrateTarget, onClick: submitMigrate }, migrateMode === 'copy' ? '复制' : '迁移')))))
       : null
 
+    // 分组编辑弹窗
+    function saveGroupSubmit() {
+      var name = String(groupForm.name || '').trim()
+      if (!name) { upd({ msg: '请填写分组名称' }); return }
+      var skills = Object.keys(groupForm.skills).filter(function (k) { return groupForm.skills[k] })
+      call('groups', { action: 'save', id: groupForm.id || undefined, name: name, skills: skills }).then(function (r) {
+        upd({ msg: r && r.ok ? '分组已保存' : ('保存失败: ' + (r && r.error)), showGroup: false })
+        loadAll()
+      }).catch(function (e) { upd({ msg: '保存失败: ' + String((e && e.message) || e) }) })
+    }
+    function deleteGroupSubmit() {
+      if (!groupForm.id) return
+      call('groups', { action: 'delete', id: groupForm.id }).then(function (r) {
+        upd({ msg: '分组已删除', showGroup: false, groupFilter: groupFilter === groupForm.id ? '' : groupFilter })
+        loadAll()
+      }).catch(function (e) { upd({ msg: '删除失败: ' + String((e && e.message) || e) }) })
+    }
+
+    var groupModal = showGroup
+      ? h('div', { className: 'ags-modal', onClick: function () { upd({ showGroup: false }) } },
+          h('div', { className: 'ags-modal-box', onClick: function (e) { stop(e) } },
+            h('div', { className: 'ags-modal-head' },
+              h('span', { className: 'ags-title' }, groupForm.id ? '编辑分组' : '新建分组'),
+              h('button', { className: 'ags-btn', onClick: function () { upd({ showGroup: false }) } }, '✕ 关闭')),
+            h('div', { className: 'ags-modal-body' },
+              h('div', { className: 'ags-drow' },
+                h('span', { className: 'ags-dkey' }, '分组名称'),
+                h('input', { className: 'ags-in', style: { flex: '1 1 auto' }, placeholder: '输入分组名称（必填）', value: groupForm.name, onChange: function (e) { upd({ groupForm: Object.assign({}, groupForm, { name: e.target.value }) }) } })),
+              h('div', { className: 'ags-drow' },
+                h('span', { className: 'ags-dkey' }, '选择技能'),
+                h('div', { className: 'ags-dval', style: { maxHeight: 240, overflow: 'auto' } },
+                  migrateSkillsData.length
+                    ? migrateSkillsData.map(function (s) {
+                        return h('label', { key: 'gs-' + s.name, style: { display: 'block', padding: '2px 0', cursor: 'pointer' } },
+                          chk(!!groupForm.skills[s.name], function (v) {
+                            var n = Object.assign({}, groupForm.skills)
+                            n[s.name] = v
+                            upd({ groupForm: Object.assign({}, groupForm, { skills: n }) })
+                          }),
+                          ' ' + s.name)
+                      })
+                    : h('div', { className: 'ags-empty' }, '当前作用域没有技能'))),
+              h('div', { className: 'ags-foot' },
+                groupForm.id ? h('button', { className: 'ags-btn', style: { color: 'var(--dsw-alias-state-error-primary,#dc2626)' }, onClick: deleteGroupSubmit }, '删除分组') : null,
+                h('span', { style: { flex: '1 1 auto' } }),
+                h('button', { className: 'ags-btn ags-btn-primary', disabled: !String(groupForm.name || '').trim(), onClick: saveGroupSubmit }, '保存分组')))))
+      : null
+
     // 主面板 Skills：按作用域分组显示（全局 / 工作区）
     function manCardsFor(list, disabledList) {
       return list.map(function (sk) {
@@ -712,7 +880,7 @@ window.__ModuleLoader__.load({
             h('span', { className: 'ags-badge' + (mode === 'link' ? ' ags-badge-link' : (on ? ' ags-badge-on' : ' ags-badge-off')) }, mode === 'link' ? '🔗 软连接' : (on ? '启用' : '已停用'))),
           h('div', { className: 'ags-card-desc' }, String(sk.description || '')),
           h('div', { className: 'ags-card-foot' },
-            h('button', { className: 'ags-btn', onClick: function (e) { stop(e); removeItem('skill', sk.name) } }, '移除'),
+            h('button', { className: 'ags-btn' + (confirmDel && confirmDel.type === 'skill' && confirmDel.name === sk.name ? ' ags-btn-danger' : ''), onClick: function (e) { stop(e); onRemove('skill', sk.name) } }, delLabel('skill', sk.name, '移除')),
             h('label', { onClick: stop }, ToggleSwitch(on, function (v) { toggleItem('skill', sk.name, v) }))))
       }).concat(disabledList.map(function (s) {
         var on = getEnabled('skill', s.name, false)
@@ -723,7 +891,7 @@ window.__ModuleLoader__.load({
             h('span', { className: 'ags-badge' + (mode === 'link' ? ' ags-badge-link' : ' ags-badge-off') }, mode === 'link' ? '🔗 软连接' : '已停用')),
           h('div', { className: 'ags-card-desc' }, mode === 'link' ? '(软连接已移除，启用后重新链接)' : '(已停用，SKILL.md 已改名 .disabled)'),
           h('div', { className: 'ags-card-foot' },
-            h('button', { className: 'ags-btn', onClick: function (e) { stop(e); removeItem('skill', s.name) } }, '移除'),
+            h('button', { className: 'ags-btn' + (confirmDel && confirmDel.type === 'skill' && confirmDel.name === s.name ? ' ags-btn-danger' : ''), onClick: function (e) { stop(e); onRemove('skill', s.name) } }, delLabel('skill', s.name, '移除')),
             h('label', { onClick: stop }, ToggleSwitch(on, function (v) { toggleItem('skill', s.name, v) }))))
       }))
     }
@@ -736,9 +904,15 @@ window.__ModuleLoader__.load({
         return String(s.name || '').toLowerCase().indexOf(q) >= 0 || String(s.description || '').toLowerCase().indexOf(q) >= 0
       })
     }
+    // 分组过滤：选中的分组只显示该组内的技能（在当前作用域内）
+    var activeGroup = groups.filter(function (g) { return g.id === groupFilter })[0] || null
+    function filterGroup(list) {
+      if (!activeGroup || !activeGroup.skills || !activeGroup.skills.length) return list
+      return list.filter(function (s) { return activeGroup.skills.indexOf(s.name) >= 0 })
+    }
     var skillScopeCards = skillScope === 'global'
-      ? manCardsFor(filterSkills(dshSkillList), filterSkills(disabledSkills))
-      : (activeWs ? manCardsFor(filterSkills(activeWs.skills || []), filterSkills(activeWs.disabled || [])) : [])
+      ? manCardsFor(filterGroup(filterSkills(dshSkillList)), filterGroup(filterSkills(disabledSkills)))
+      : (activeWs ? manCardsFor(filterGroup(filterSkills(activeWs.skills || [])), filterGroup(filterSkills(activeWs.disabled || []))) : [])
 
     var statusBody = stTab === 'mcp'
       ? h('div', null,
@@ -757,6 +931,18 @@ window.__ModuleLoader__.load({
             h('span', { style: { flex: '1 1 auto' } }),
             h('input', { className: 'ags-in', style: { maxWidth: 200 }, placeholder: '🔍 搜索技能…', value: skillSearch, onChange: function (e) { upd({ skillSearch: e.target.value }) } })
           ),
+          groups.length || activeGroup
+            ? h('div', { className: 'ags-tabs', style: { marginTop: 2 } },
+                h('button', { className: 'ags-tab' + (!groupFilter ? ' ags-tab-active' : ''), onClick: function () { upd({ groupFilter: '' }) } }, '全部'),
+                groups.map(function (g) {
+                  return h('button', { key: 'grp-' + g.id, className: 'ags-tab' + (groupFilter === g.id ? ' ags-tab-active' : ''), onClick: function () { upd({ groupFilter: g.id }) } }, g.name + ' (' + (g.skills ? g.skills.length : 0) + ')')
+                }),
+                h('span', { style: { flex: '1 1 auto' } }),
+                h('button', { className: 'ags-btn', onClick: function () {
+                  upd({ showGroup: true, groupForm: { id: '', name: '', skills: {} } })
+                } }, '＋ 分组'))
+            : h('div', { className: 'ags-tabs', style: { marginTop: 2, justifyContent: 'flex-end' } },
+                h('button', { className: 'ags-btn', onClick: function () { upd({ showGroup: true, groupForm: { id: '', name: '', skills: {} } }) } }, '＋ 分组')),
           skillScopeCards.length
             ? h('div', { className: 'ags-grid' }, skillScopeCards)
             : h('div', { className: 'ags-empty' }, skillScope === 'global' ? '暂无已同步的 skill' : '该工作区暂无 skill'))
@@ -835,7 +1021,8 @@ window.__ModuleLoader__.load({
       settingsModal,
       addSkillModal,
       addMcpModal,
-      migrateModal)
+      migrateModal,
+      groupModal)
   }
 
   function apply(ctx) {
