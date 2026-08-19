@@ -1,7 +1,7 @@
 // dsh-agent-sync — browser panel (Settings → MCP/Skills)
 // Lazy-CJS, zero build. All data/actions go through the host's HTTP routes under /dsh-agent-sync/*.
 // 说明：本插件不依赖任何组件库——纯 React（React.createElement）+ DSH 主题变量（--dsw-alias-*）
-// 自绘卡片与开关，与 DSH 插件市场风格一致。
+// 自绘卡片、开关与弹窗，与 DSH 插件市场风格一致。
 ;(function () {
   'use strict'
 
@@ -22,7 +22,8 @@
         '.ags-tab{font:inherit;color:var(--dsw-alias-label-secondary,#6b7280);cursor:pointer;white-space:nowrap;background:transparent;border:none;border-bottom:2px solid transparent;padding:7px 12px;font-size:13px}' +
         '.ags-tab-active{color:var(--dsw-alias-brand-primary,#4f6ef7);border-bottom-color:var(--dsw-alias-brand-primary,#4f6ef7);font-weight:600}' +
         '.ags-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin-top:6px}' +
-        '.ags-card{border:1px solid var(--dsw-alias-border-l1,#e5e7eb);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:4px;background:var(--dsw-alias-bg-layer-1,#ffffff)}' +
+        '.ags-card{border:1px solid var(--dsw-alias-border-l1,#e5e7eb);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:4px;background:var(--dsw-alias-bg-layer-1,#ffffff);cursor:pointer}' +
+        '.ags-card:hover{border-color:var(--dsw-alias-brand-primary,#4f6ef7)}' +
         '.ags-card.ags-off{opacity:.55}' +
         '.ags-card-head{display:flex;align-items:center;justify-content:space-between;gap:6px}' +
         '.ags-name{font-weight:500;flex:0 0 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
@@ -46,7 +47,15 @@
         '.ags-in{font:inherit;color:var(--dsw-alias-label-primary,#1f2328);background:transparent;border:1px solid var(--dsw-alias-border-l2,#d9dde3);border-radius:6px;padding:4px 8px;font-size:12px;margin:2px 4px 2px 0}' +
         '.ags-in:focus{outline:none;border-color:var(--dsw-alias-brand-primary,#4f6ef7)}' +
         '.ags-label{font-size:11px;color:var(--dsw-alias-label-secondary,#6b7280);margin-right:2px}' +
-        '.ags-checkall{font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;user-select:none;color:var(--dsw-alias-label-secondary,#6b7280);margin-left:12px}'
+        '.ags-checkall{font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;user-select:none;color:var(--dsw-alias-label-secondary,#6b7280);margin-left:12px}' +
+        '.ags-modal{position:fixed;inset:0;background:rgba(15,20,30,.4);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px}' +
+        '.ags-modal-box{background:var(--dsw-alias-bg-layer-1,#ffffff);border:1px solid var(--dsw-alias-border-l2,#d9dde3);border-radius:10px;max-width:660px;width:100%;max-height:80vh;overflow:auto;padding:14px 16px}' +
+        '.ags-modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}' +
+        '.ags-modal-body{display:flex;flex-direction:column;gap:6px}' +
+        '.ags-drow{display:flex;gap:10px;border-bottom:1px dashed var(--dsw-alias-border-l1,#eceef1);padding:4px 0}' +
+        '.ags-drow:last-child{border-bottom:none}' +
+        '.ags-dkey{flex:0 0 96px;color:var(--dsw-alias-label-tertiary,#8b93a1);font-size:12px;line-height:1.6}' +
+        '.ags-dval{flex:1 1 auto;font-size:12px;line-height:1.6;word-break:break-all;white-space:pre-wrap;min-width:0}'
       )
     }
   }
@@ -119,6 +128,7 @@
     var selSkill = state[0].selSkill || {}
     var form = state[0].form || { id: '', label: '', kind: 'dir', path: '', mcpKey: '', section: '' }
     var overrides = state[0].overrides || {}
+    var detail = state[0].detail || null
     var setState = state[1]
     var upd = function (patch) { setState(function (s) { return Object.assign({}, s, patch) }) }
     function overrideKey(type, name) { return type + ':' + name }
@@ -254,79 +264,134 @@
 
     var msgClass = msg ? (msg.indexOf('失败') >= 0 ? ' ags-err' : msg.indexOf('✓') >= 0 ? ' ags-ok' : '') : ''
 
-    // 可同步列表：卡片 + 勾选
+    function stop(e) { if (e && e.stopPropagation) e.stopPropagation() }
+    function openDetail(type, item) { upd({ detail: { type: type, item: item } }) }
+    function closeDetail() { upd({ detail: null }) }
+
+    // 可同步列表：卡片 + 勾选（点击卡片看详情）
     var syncMcpCards = visibleMcp.map(function (m) {
-      return h('div', { key: 'mcp-card-' + m.name, className: 'ags-card' },
+      return h('div', { key: 'mcp-card-' + m.name, className: 'ags-card', onClick: function () { openDetail('mcp', m) } },
         h('div', { className: 'ags-card-head' },
           h('span', { className: 'ags-name', style: { flex: '1 1 auto' } }, m.name),
           h('span', { className: 'ags-tag' }, m.transport || '?')),
         h('div', { className: 'ags-card-meta' }, (m.command || m.url || '') + (m.error ? ' (' + m.error + ')' : '')),
         h('div', { className: 'ags-card-foot' },
           sourceTags(m.sources),
-          chk(!!selMcp[m.name], function (v) { upd({ selMcp: Object.assign({}, selMcp, { [m.name]: v }) }) })))
+          h('label', { onClick: stop }, chk(!!selMcp[m.name], function (v) { upd({ selMcp: Object.assign({}, selMcp, { [m.name]: v }) }) }))))
     })
     var syncSkillCards = visibleSkills.map(function (s) {
-      return h('div', { key: 'skill-card-' + s.name, className: 'ags-card' },
+      return h('div', { key: 'skill-card-' + s.name, className: 'ags-card', onClick: function () { openDetail('skill', s) } },
         h('div', { className: 'ags-card-head' },
           h('span', { className: 'ags-name', style: { flex: '1 1 auto' } }, s.name),
           h('span', { className: 'ags-tag' }, 'skill')),
         h('div', { className: 'ags-card-desc' }, String(s.description || '')),
         h('div', { className: 'ags-card-foot' },
           sourceTags(s.sources),
-          chk(!!selSkill[s.name], function (v) { upd({ selSkill: Object.assign({}, selSkill, { [s.name]: v }) }) })))
+          h('label', { onClick: stop }, chk(!!selSkill[s.name], function (v) { upd({ selSkill: Object.assign({}, selSkill, { [s.name]: v }) }) }))))
     })
 
-    // 管理视图：DSH 现状卡片 + 开关
     function mcpMeta(name) {
       var st = stat && stat.state && stat.state.mcp && stat.state.mcp[name]
       var c = st && st.config
       if (!c) return ''
       return c.transport === 'stdio' ? (c.command || '') : (c.url || '')
     }
+    function mcpCfg(name) {
+      return stat && stat.state && stat.state.mcp && stat.state.mcp[name] && stat.state.mcp[name].config
+    }
+    function mcpSrc(name) {
+      return (stat && stat.state && stat.state.mcp && stat.state.mcp[name] && stat.state.mcp[name].source) || ''
+    }
     var manMcpCards = (activeCard ? activeCard.mcp : []).map(function (name) {
       var on = getEnabled('mcp', name, true)
-      return h('div', { key: 'man-mcp-' + name, className: 'ags-card' + (on ? '' : ' ags-off') },
+      return h('div', { key: 'man-mcp-' + name, className: 'ags-card' + (on ? '' : ' ags-off'), onClick: function () { openDetail('mcp', { name: name, source: mcpSrc(name), config: mcpCfg(name) }) } },
         h('div', { className: 'ags-card-head' },
           h('span', { className: 'ags-name', style: { flex: '1 1 auto' } }, 'mcp-' + name),
           h('span', { className: 'ags-badge' + (on ? ' ags-badge-on' : ' ags-badge-off') }, on ? '启用' : '已停用')),
         h('div', { className: 'ags-card-meta' }, mcpMeta(name) || 'stdio'),
         h('div', { className: 'ags-card-foot' },
-          h('button', { className: 'ags-btn', onClick: function () { removeItem('mcp', name) } }, '移除'),
-          ToggleSwitch(on, function (v) { toggleItem('mcp', name, v) })))
+          h('button', { className: 'ags-btn', onClick: function (e) { stop(e); removeItem('mcp', name) } }, '移除'),
+          h('label', { onClick: stop }, ToggleSwitch(on, function (v) { toggleItem('mcp', name, v) }))))
     })
     var manMcpDisabledCards = disabledMcp.map(function (m) {
       var on = getEnabled('mcp', m.name, false)
-      return h('div', { key: 'man-mcp-off-' + m.name, className: 'ags-card' + (on ? '' : ' ags-off') },
+      return h('div', { key: 'man-mcp-off-' + m.name, className: 'ags-card' + (on ? '' : ' ags-off'), onClick: function () { openDetail('mcp', { name: m.name, source: m.source || '', config: mcpCfg(m.name) }) } },
         h('div', { className: 'ags-card-head' },
           h('span', { className: 'ags-name', style: { flex: '1 1 auto' } }, 'mcp-' + m.name),
           h('span', { className: 'ags-badge' + (on ? ' ags-badge-on' : ' ags-badge-off') }, on ? '启用' : '已停用')),
         h('div', { className: 'ags-card-meta' }, mcpMeta(m.name) || 'stdio'),
         h('div', { className: 'ags-card-foot' },
-          h('button', { className: 'ags-btn', onClick: function () { removeItem('mcp', m.name) } }, '移除'),
-          ToggleSwitch(on, function (v) { toggleItem('mcp', m.name, v) })))
+          h('button', { className: 'ags-btn', onClick: function (e) { stop(e); removeItem('mcp', m.name) } }, '移除'),
+          h('label', { onClick: stop }, ToggleSwitch(on, function (v) { toggleItem('mcp', m.name, v) }))))
     })
     var manSkillCards = dshSkillList.map(function (sk) {
       var on = getEnabled('skill', sk.name, true)
-      return h('div', { key: 'man-skill-' + sk.name, className: 'ags-card' + (on ? '' : ' ags-off') },
+      return h('div', { key: 'man-skill-' + sk.name, className: 'ags-card' + (on ? '' : ' ags-off'), onClick: function () { openDetail('skill', sk) } },
         h('div', { className: 'ags-card-head' },
           h('span', { className: 'ags-name', style: { flex: '1 1 auto' } }, sk.name),
           h('span', { className: 'ags-badge' + (on ? ' ags-badge-on' : ' ags-badge-off') }, on ? '启用' : '已停用')),
         h('div', { className: 'ags-card-desc' }, String(sk.description || '')),
         h('div', { className: 'ags-card-foot' },
-          h('button', { className: 'ags-btn', onClick: function () { removeItem('skill', sk.name) } }, '移除'),
-          ToggleSwitch(on, function (v) { toggleItem('skill', sk.name, v) })))
+          h('button', { className: 'ags-btn', onClick: function (e) { stop(e); removeItem('skill', sk.name) } }, '移除'),
+          h('label', { onClick: stop }, ToggleSwitch(on, function (v) { toggleItem('skill', sk.name, v) }))))
     })
     var manSkillDisabledCards = disabledSkills.map(function (s) {
       var on = getEnabled('skill', s.name, false)
-      return h('div', { key: 'man-skill-off-' + s.name, className: 'ags-card' + (on ? '' : ' ags-off') },
+      return h('div', { key: 'man-skill-off-' + s.name, className: 'ags-card' + (on ? '' : ' ags-off'), onClick: function () { openDetail('skill', { name: s.name, description: '', source: s.source }) } },
         h('div', { className: 'ags-card-head' },
           h('span', { className: 'ags-name', style: { flex: '1 1 auto' } }, s.name),
           h('span', { className: 'ags-badge' + (on ? ' ags-badge-on' : ' ags-badge-off') }, on ? '启用' : '已停用')),
         h('div', { className: 'ags-card-desc' }, '(已停用，SKILL.md 已改名 .disabled)'),
         h('div', { className: 'ags-card-foot' },
-          h('button', { className: 'ags-btn', onClick: function () { removeItem('skill', s.name) } }, '移除'),
-          ToggleSwitch(on, function (v) { toggleItem('skill', s.name, v) })))
+          h('button', { className: 'ags-btn', onClick: function (e) { stop(e); removeItem('skill', s.name) } }, '移除'),
+          h('label', { onClick: stop }, ToggleSwitch(on, function (v) { toggleItem('skill', s.name, v) }))))
     })
+
+    // 详情弹窗
+    var detailRows = []
+    if (detail) {
+      function pushRow(k, v) {
+        if (v !== undefined && v !== null && v !== '') detailRows.push(h('div', { key: k, className: 'ags-drow' }, h('span', { className: 'ags-dkey' }, k), h('span', { className: 'ags-dval' }, String(v))))
+      }
+      if (detail.type === 'mcp') {
+        var it = detail.item
+        var srcListM = (it.sources && it.sources.length ? it.sources : (it.source ? [it.source] : []))
+        pushRow('名称', it.name)
+        pushRow('来源', srcListM.join(', '))
+        pushRow('传输方式', it.transport || '?')
+        if (it.config) {
+          var c = it.config
+          pushRow('命令', c.command)
+          pushRow('参数', Array.isArray(c.args) && c.args.length ? c.args.join(' ') : '')
+          pushRow('URL', c.url)
+          pushRow('环境变量(键)', c.env ? Object.keys(c.env).join(', ') : '')
+          pushRow('Headers(键)', c.headers ? Object.keys(c.headers).join(', ') : '')
+        } else {
+          pushRow('命令', it.command)
+          pushRow('参数', Array.isArray(it.args) && it.args.length ? it.args.join(' ') : '')
+          pushRow('URL', it.url)
+          pushRow('环境变量(键)', it.envKeys && it.envKeys.length ? it.envKeys.join(', ') : '')
+          pushRow('Headers(键)', it.headerKeys && it.headerKeys.length ? it.headerKeys.join(', ') : '')
+        }
+        pushRow('错误', it.error)
+      } else {
+        var s = detail.item
+        var srcListS = (s.sources && s.sources.length ? s.sources : (s.source ? [s.source] : []))
+        pushRow('名称', s.name)
+        pushRow('来源', srcListS.join(', '))
+        pushRow('描述', s.description)
+        pushRow('仓库', s.repo)
+        pushRow('路径', s.path)
+      }
+    }
+    var detailModal = detail
+      ? h('div', { className: 'ags-modal', onClick: function () { closeDetail() } },
+          h('div', { className: 'ags-modal-box', onClick: function (e) { stop(e) } },
+            h('div', { className: 'ags-modal-head' },
+              h('span', { className: 'ags-title' }, detail.type === 'mcp' ? 'MCP 详情' : 'Skill 详情'),
+              h('button', { className: 'ags-btn', onClick: function () { closeDetail() } }, '✕ 关闭')),
+            h('div', { className: 'ags-modal-body' }, detailRows)))
+      : null
 
     var syncBody = syncTab === 'mcp'
       ? h('div', null,
@@ -415,7 +480,8 @@
 
     return h('div', { className: 'ags-panel' },
       view === 'main' ? mainView : syncView,
-      msg ? h('div', { className: 'ags-msg' + msgClass }, msg) : null)
+      msg ? h('div', { className: 'ags-msg' + msgClass }, msg) : null,
+      detailModal)
   }
 
   function apply(ctx) {
