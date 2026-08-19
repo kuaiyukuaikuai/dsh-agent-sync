@@ -22,12 +22,13 @@ window.__ModuleLoader__.load({
         '.ags-btn-primary{border-color:var(--dsw-alias-brand-primary,#4f6ef7);color:var(--dsw-alias-brand-primary,#4f6ef7)}' +
         '.ags-btn-primary:hover{background:var(--dsw-alias-brand-primary,#4f6ef7);color:#fff}' +
         '.ags-tabs{display:flex;gap:6px;margin:4px 0;flex-wrap:wrap}' +
+        '.ags-switchbar{display:flex;justify-content:center;gap:6px;margin:6px 0 10px}' +
         '.ags-tab{font:inherit;color:var(--dsw-alias-label-secondary,#6b7280);cursor:pointer;white-space:nowrap;background:color-mix(in srgb,var(--dsw-alias-border-l2,#d9dde3) 22%,transparent);border:1px solid transparent;border-radius:999px;padding:2px 10px;font-size:12px;line-height:1.6}' +
         '.ags-tab:hover{border-color:var(--dsw-alias-border-l2,#d9dde3)}' +
         '.ags-tab-active{background:var(--dsw-alias-brand-primary,#4f6ef7);border-color:var(--dsw-alias-brand-primary,#4f6ef7);color:#fff;font-weight:600}' +
         '.ags-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin-top:6px}' +
-        '.ags-card{border:1px solid var(--dsw-alias-border-l1,#e5e7eb);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:4px;background:var(--dsw-alias-bg-layer-1,#ffffff);cursor:pointer}' +
-        '.ags-card:hover{border-color:var(--dsw-alias-brand-primary,#4f6ef7)}' +
+        '.ags-card{border:none;border-radius:10px;padding:8px 10px;display:flex;flex-direction:column;gap:4px;background:var(--dsw-alias-bg-layer-1,#ffffff);cursor:pointer;box-shadow:0 1px 3px rgba(15,20,30,.08)}' +
+        '.ags-card:hover{box-shadow:0 2px 8px rgba(15,20,30,.14);transform:translateY(-1px)}' +
         '.ags-card.ags-off{opacity:.55}' +
         '.ags-card-head{display:flex;align-items:center;justify-content:space-between;gap:6px}' +
         '.ags-name{font-weight:500;flex:0 0 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
@@ -288,7 +289,7 @@ window.__ModuleLoader__.load({
     var disabledMcp = (stat && stat.disabledMcp) || []
     var disabledSkills = (stat && stat.disabledSkills) || []
     var skillProvider = stat && stat.skillProvider
-    var activeCard = profTabs.filter(function (q) { return q.name === profTab })[0] || profTabs[0] || null
+    var activeCard = profTabs.filter(function (q) { return q.name === 'desktop' })[0] || profTabs[0] || null
 
     var sourceRows = sources.map(function (s) {
       return h('div', { key: 'src-' + s.id, className: 'ags-row' },
@@ -645,13 +646,8 @@ window.__ModuleLoader__.load({
         gearBtn(),
         h('span', { className: 'ags-sub' }, skillProvider === 'unavailable' ? '（当前会话未挂载 skill 提供方，模型暂不可用，文件已就位）' : '启停 / 移除已同步到 DSH 的 MCP 与 skill'),
         h('button', { className: 'ags-btn ags-btn-primary', style: { marginLeft: 'auto' }, onClick: function () { upd({ view: 'sync' }) } }, 'MCP/Skills同步 →')),
-      h('div', { className: 'ags-sec' },
-        h('div', { className: 'ags-tabs' },
-          profTabs.map(function (p) {
-            return h('button', { key: 'ptab-' + p.name, className: 'ags-tab' + (activeCard && activeCard.name === p.name ? ' ags-tab-active' : ''), onClick: function () { upd({ profTab: p.name }) } },
-              p.name + ' (' + (p.mcp.length + dshSkillList.length + disabledMcp.length + disabledSkills.length) + ')')
-          })),
-        h('div', { className: 'ags-tabs' },
+      h('div', { className: 'ags-sec', style: { border: 'none', boxShadow: 'none', background: 'transparent', padding: 0 } },
+        h('div', { className: 'ags-switchbar' },
           h('button', { className: 'ags-tab' + (stTab === 'mcp' ? ' ags-tab-active' : ''), onClick: function () { upd({ stTab: 'mcp' }) } }, 'MCP'),
           h('button', { className: 'ags-tab' + (stTab === 'skills' ? ' ags-tab-active' : ''), onClick: function () { upd({ stTab: 'skills' }) } }, 'Skills')
         ),
