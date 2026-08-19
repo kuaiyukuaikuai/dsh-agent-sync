@@ -485,8 +485,7 @@ window.__ModuleLoader__.load({
               })),
             h('button', { className: 'ags-btn ags-btn-primary', disabled: busy || !selectedSkill.length, onClick: function () { runSync([], selectedSkill, false, syncScope) } }, '同步选中 Skill'),
             h('button', { className: 'ags-btn', disabled: busy || !selectedSkill.length, onClick: function () { runSync([], selectedSkill, true, syncScope) } }, '覆盖同步'),
-            h('label', { className: 'ags-checkall' }, chk(allSkillChecked, function () { toggleAllSkill() }), '全选本页'),
-            h('button', { className: 'ags-btn ags-btn-primary', style: { marginLeft: 'auto' }, onClick: function () { upd({ showAdd: true, addScope: syncScope }) } }, '＋ 添加技能')))
+            h('label', { className: 'ags-checkall' }, chk(allSkillChecked, function () { toggleAllSkill() }), '全选本页')))
 
     // 文件读取 / 上传到宿主
     function readFileAsText(file) {
@@ -660,7 +659,8 @@ window.__ModuleLoader__.load({
         h('span', { className: 'ags-title' }, 'MCP/Skills同步'),
         h('button', { className: 'ags-btn', onClick: function () { loadAll() }, disabled: loading }, loading ? '加载中…' : '🔄 刷新'),
         gearBtn(),
-        h('span', { className: 'ags-sub' }, '从其他 agent 一键同步 MCP 与 skill 进 DSH')),
+        h('span', { className: 'ags-sub' }, '从其他 agent 一键同步 MCP 与 skill 进 DSH'),
+        h('button', { className: 'ags-btn ags-btn-primary', style: { marginLeft: 'auto' }, onClick: function () { upd({ showAdd: true, addScope: syncScope }) } }, '＋ 添加技能')),
       (function () {
         var moreActive = moreOpen || MORE_TABS.indexOf(tab) >= 0
         function tabBtn(t) {
