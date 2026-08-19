@@ -34,6 +34,7 @@
         '.ags-badge{font-size:11px;line-height:16px;border-radius:4px;padding:0 6px;flex:0 0 auto;white-space:nowrap}' +
         '.ags-badge-on{background:rgba(22,163,74,.12);color:var(--dsw-alias-state-success-primary,#16a34a)}' +
         '.ags-badge-off{background:rgba(220,38,38,.1);color:var(--dsw-alias-state-error-primary,#dc2626)}' +
+        '.ags-badge-link{background:rgba(79,110,247,.12);color:var(--dsw-alias-brand-primary,#4f6ef7)}' +
         '.ags-switch{display:inline-flex;align-items:center;cursor:pointer;flex:0 0 auto}' +
         '.ags-switch-track{width:34px;height:18px;border-radius:999px;background:var(--dsw-alias-border-l2,#d9dde3);position:relative;transition:background .15s;border:1px solid var(--dsw-alias-border-l2,#d9dde3)}' +
         '.ags-switch.on .ags-switch-track{background:var(--dsw-alias-brand-primary,#4f6ef7);border-color:var(--dsw-alias-brand-primary,#4f6ef7)}' +
@@ -129,6 +130,9 @@
     var form = state[0].form || { id: '', label: '', kind: 'dir', path: '', mcpKey: '', section: '' }
     var overrides = state[0].overrides || {}
     var detail = state[0].detail || null
+    var cfg = state[0].cfg || null
+    var cfgDraft = state[0].cfgDraft || { skillSyncMode: 'copy', syncProfiles: 'all' }
+    var showCfg = !!state[0].showCfg
     var setState = state[1]
     var upd = function (patch) { setState(function (s) { return Object.assign({}, s, patch) }) }
     function overrideKey(type, name) { return type + ':' + name }
@@ -147,8 +151,14 @@
         call('scan', {}),
         call('status', {}),
         call('sources', { action: 'list' }),
+        call('config', { action: 'get' }),
       ]).then(function (r) {
-        upd({ data: r[0], stat: r[1], sources: Array.isArray(r[2]) ? r[2] : [], loading: false })
+        var c = r[3] || null
+        upd({
+          data: r[0], stat: r[1], sources: Array.isArray(r[2]) ? r[2] : [],
+          cfg: c, cfgDraft: c ? { skillSyncMode: c.skillSyncMode || 'copy', syncProfiles: c.syncProfiles || 'all' } : cfgDraft,
+          loading: false,
+        })
       }).catch(function (e) { upd({ msg: '加载失败: ' + String((e && e.message) || e), loading: false }) })
     }
 
@@ -202,6 +212,22 @@
         setOverride(type, name, enabled)
         upd({ msg: (enabled ? '已启用 ' : '已停用 ') + name })
       }).catch(function (e) { upd({ msg: '操作失败: ' + String((e && e.message) || e) }) })
+    }
+
+    function skillModeOf(name) {
+      var rec = stat && stat.state && stat.state.skills && stat.state.skills[name]
+      return rec && rec.mode ? rec.mode : 'copy'
+    }
+
+    function openSettings() {
+      upd({ cfgDraft: { skillSyncMode: (cfg && cfg.skillSyncMode) || 'copy', syncProfiles: (cfg && cfg.syncProfiles) || 'all' }, showCfg: true })
+    }
+
+    function saveSettings() {
+      call('config', { action: 'set', skillSyncMode: cfgDraft.skillSyncMode, syncProfiles: cfgDraft.syncProfiles }).then(function (c) {
+        upd({ cfg: c, showCfg: false, msg: '配置已保存（下次同步生效）' })
+        loadAll()
+      }).catch(function (e) { upd({ msg: '保存失败: ' + String((e && e.message) || e) }) })
     }
 
     function addSource() {
@@ -324,10 +350,11 @@
     })
     var manSkillCards = dshSkillList.map(function (sk) {
       var on = getEnabled('skill', sk.name, true)
+      var mode = skillModeOf(sk.name)
       return h('div', { key: 'man-skill-' + sk.name, className: 'ags-card' + (on ? '' : ' ags-off'), onClick: function () { openDetail('skill', sk) } },
         h('div', { className: 'ags-card-head' },
           h('span', { className: 'ags-name', style: { flex: '1 1 auto' } }, sk.name),
-          h('span', { className: 'ags-badge' + (on ? ' ags-badge-on' : ' ags-badge-off') }, on ? '启用' : '已停用')),
+          h('span', { className: 'ags-badge' + (mode === 'link' ? ' ags-badge-link' : (on ? ' ags-badge-on' : ' ags-badge-off')) }, mode === 'link' ? '🔗 软连接' : (on ? '启用' : '已停用'))),
         h('div', { className: 'ags-card-desc' }, String(sk.description || '')),
         h('div', { className: 'ags-card-foot' },
           h('button', { className: 'ags-btn', onClick: function (e) { stop(e); removeItem('skill', sk.name) } }, '移除'),
@@ -335,11 +362,12 @@
     })
     var manSkillDisabledCards = disabledSkills.map(function (s) {
       var on = getEnabled('skill', s.name, false)
+      var mode = skillModeOf(s.name)
       return h('div', { key: 'man-skill-off-' + s.name, className: 'ags-card' + (on ? '' : ' ags-off'), onClick: function () { openDetail('skill', { name: s.name, description: '', source: s.source }) } },
         h('div', { className: 'ags-card-head' },
           h('span', { className: 'ags-name', style: { flex: '1 1 auto' } }, s.name),
-          h('span', { className: 'ags-badge' + (on ? ' ags-badge-on' : ' ags-badge-off') }, on ? '启用' : '已停用')),
-        h('div', { className: 'ags-card-desc' }, '(已停用，SKILL.md 已改名 .disabled)'),
+          h('span', { className: 'ags-badge' + (mode === 'link' ? ' ags-badge-link' : ' ags-badge-off') }, mode === 'link' ? '🔗 软连接' : '已停用')),
+        h('div', { className: 'ags-card-desc' }, mode === 'link' ? '(软连接已移除，启用后重新链接)' : '(已停用，SKILL.md 已改名 .disabled)'),
         h('div', { className: 'ags-card-foot' },
           h('button', { className: 'ags-btn', onClick: function (e) { stop(e); removeItem('skill', s.name) } }, '移除'),
           h('label', { onClick: stop }, ToggleSwitch(on, function (v) { toggleItem('skill', s.name, v) }))))
@@ -391,6 +419,35 @@
             h('div', { className: 'ags-modal-body' }, detailRows)))
       : null
 
+    var settingsModal = showCfg
+      ? h('div', { className: 'ags-modal', onClick: function () { upd({ showCfg: false }) } },
+          h('div', { className: 'ags-modal-box', onClick: function (e) { stop(e) } },
+            h('div', { className: 'ags-modal-head' },
+              h('span', { className: 'ags-title' }, '插件设置'),
+              h('button', { className: 'ags-btn', onClick: function () { upd({ showCfg: false }) } }, '✕ 关闭')),
+            h('div', { className: 'ags-modal-body' },
+              h('div', { className: 'ags-drow' },
+                h('span', { className: 'ags-dkey' }, 'Skill 同步方式'),
+                h('div', { className: 'ags-dval' },
+                  h('select', { className: 'ags-in', value: cfgDraft.skillSyncMode, onChange: function (e) { upd({ cfgDraft: Object.assign({}, cfgDraft, { skillSyncMode: e.target.value }) }) } },
+                    h('option', { value: 'copy' }, '文件复制（默认）'),
+                    h('option', { value: 'link' }, '软连接（链接源目录，实时同步）')),
+                  h('div', { className: 'ags-sub', style: { marginTop: 2 } }, 'copy=复制到 ~/.dsh/skills；link=创建 junction 指向源目录，源更新即同步，不占双份空间'))),
+              h('div', { className: 'ags-drow' },
+                h('span', { className: 'ags-dkey' }, 'MCP 同步目标'),
+                h('div', { className: 'ags-dval' },
+                  h('select', { className: 'ags-in', value: cfgDraft.syncProfiles, onChange: function (e) { upd({ cfgDraft: Object.assign({}, cfgDraft, { syncProfiles: e.target.value }) }) } },
+                    h('option', { value: 'all' }, '全部 profile（desktop + web）'),
+                    h('option', { value: 'desktop' }, '仅 desktop'),
+                    h('option', { value: 'web' }, '仅 web')))),
+              h('div', { className: 'ags-foot' },
+                h('button', { className: 'ags-btn ags-btn-primary', onClick: function () { saveSettings() } }, '保存')))))
+      : null
+
+    function gearBtn() {
+      return h('button', { className: 'ags-btn', title: '插件设置', onClick: function () { openSettings() } }, '⚙️ 设置')
+    }
+
     var syncBody = syncTab === 'mcp'
       ? h('div', null,
           syncMcpCards.length ? h('div', { className: 'ags-grid' }, syncMcpCards) : h('div', { className: 'ags-empty' }, '该来源暂无 MCP 服务器'),
@@ -419,6 +476,7 @@
       h('div', { className: 'ags-h' },
         h('span', { className: 'ags-title' }, 'MCP/Skills 管理'),
         h('button', { className: 'ags-btn', onClick: function () { loadAll() }, disabled: loading }, loading ? '加载中…' : '🔄 刷新'),
+        gearBtn(),
         h('span', { className: 'ags-sub' }, skillProvider === 'unavailable' ? '（当前会话未挂载 skill 提供方，模型暂不可用，文件已就位）' : '启停 / 移除已同步到 DSH 的 MCP 与 skill'),
         h('button', { className: 'ags-btn ags-btn-primary', style: { marginLeft: 'auto' }, onClick: function () { upd({ view: 'sync' }) } }, 'MCP/Skills同步 →')),
       h('div', { className: 'ags-sec' },
@@ -439,6 +497,7 @@
         h('button', { className: 'ags-btn', onClick: function () { upd({ view: 'main' }) } }, '← 返回'),
         h('span', { className: 'ags-title' }, 'MCP/Skills同步'),
         h('button', { className: 'ags-btn', onClick: function () { loadAll() }, disabled: loading }, loading ? '加载中…' : '🔄 刷新'),
+        gearBtn(),
         h('span', { className: 'ags-sub' }, '从其他 agent 一键同步 MCP 与 skill 进 DSH')),
       (function () {
         var moreActive = moreOpen || MORE_TABS.indexOf(tab) >= 0
@@ -479,7 +538,8 @@
     return h('div', { className: 'ags-panel' },
       view === 'main' ? mainView : syncView,
       msg ? h('div', { className: 'ags-msg' + msgClass }, msg) : null,
-      detailModal)
+      detailModal,
+      settingsModal)
   }
 
   function apply(ctx) {

@@ -579,6 +579,39 @@ async function writeSources(list) {
   await writeText(SOURCES_FILE, JSON.stringify(list, null, 2))
 }
 
+// ---------------------------------------------------------------------------
+// Plugin config (skillSyncMode: copy | link, syncProfiles: all | desktop | web)
+// ---------------------------------------------------------------------------
+
+const DEFAULT_CONFIG = { skillSyncMode: 'copy', syncProfiles: 'all' }
+const CONFIG_FILE = join(DIR, 'config.json')
+
+async function readConfig() {
+  const text = await readText(CONFIG_FILE)
+  if (!text) return { ...DEFAULT_CONFIG }
+  try { return { ...DEFAULT_CONFIG, ...JSON.parse(text) } } catch { return { ...DEFAULT_CONFIG } }
+}
+
+async function writeConfig(cfg) {
+  await writeText(CONFIG_FILE, JSON.stringify(cfg, null, 2))
+}
+
+async function setConfig(patch) {
+  const cfg = await readConfig()
+  if (patch && (patch.skillSyncMode === 'copy' || patch.skillSyncMode === 'link')) cfg.skillSyncMode = patch.skillSyncMode
+  if (patch && (patch.syncProfiles === 'all' || patch.syncProfiles === 'desktop' || patch.syncProfiles === 'web')) cfg.syncProfiles = patch.syncProfiles
+  await writeConfig(cfg)
+  return cfg
+}
+
+async function symlinkDir(src, dst) {
+  await symlink(src, dst, 'junction')
+}
+
+async function symlinkFile(src, dst) {
+  await symlink(src, dst)
+}
+
 async function scanCustom() {
   const result = { mcp: [], skills: [] }
   const sources = await readSources()
@@ -812,9 +845,10 @@ async function syncMcp(selected, opts = {}) {
     }
     synced.push(name)
   }
-  const profiles = opts.profile
-    ? (await profilesWithPatch()).filter((p) => p.name === opts.profile)
-    : await profilesWithPatch()
+  const config = await readConfig()
+  let profiles = await profilesWithPatch()
+  if (opts.profile) profiles = profiles.filter((p) => p.name === opts.profile)
+  else if (config.syncProfiles !== 'all') profiles = profiles.filter((p) => p.name === config.syncProfiles)
   const entries = enabledMcpEntries(state)
   const profileResults = []
   for (const p of profiles) {
@@ -838,6 +872,7 @@ async function syncMcp(selected, opts = {}) {
 }
 
 async function syncSkills(selected, opts = {}) {
+  const config = await readConfig()
   const state = await readState()
   const byName = await collectSkillCandidates(opts.sources)
   const names = resolveSelection(selected, [...byName.keys()])
@@ -849,17 +884,30 @@ async function syncSkills(selected, opts = {}) {
     if (!item) { skipped.push({ name, reason: 'not found in scanned sources' }); continue }
     const safe = sanitizeSkillName(item.name)
     const dst = item.kind === 'flat' ? join(skillsRoot, `${safe}.md`) : join(skillsRoot, safe)
-    if ((await exists(dst)) && !opts.overwrite) {
+    const existsDst = await exists(dst)
+    if (existsDst && !opts.overwrite) {
       skipped.push({ name, reason: 'already exists in ~/.dsh/skills (use overwrite: true)' })
       continue
     }
-    await copyPath(item.src, dst)
+    if (existsDst) await removePath(dst)
+    let mode = 'copy'
+    try {
+      if (config.skillSyncMode === 'link') {
+        if (item.kind === 'flat') { await symlinkFile(item.src, dst) } else { await symlinkDir(item.src, dst) }
+        mode = 'link'
+      } else {
+        await copyPath(item.src, dst)
+      }
+    } catch {
+      await copyPath(item.src, dst)
+      mode = 'copy'
+    }
     state.skills[safe] = {
-      source: item.source, src: item.src, dst,
+      source: item.source, src: item.src, dst, kind: item.kind, mode,
       enabled: state.skills[safe] ? state.skills[safe].enabled !== false : true,
       syncedAt: new Date().toISOString(),
     }
-    synced.push({ name: safe, dst })
+    synced.push({ name: safe, dst, mode })
   }
   await writeState(state)
   return { synced, skipped }
@@ -893,7 +941,7 @@ async function status(ctx) {
   const disabledMcp = Object.keys(state.mcp)
     .filter((n) => state.mcp[n].enabled === false)
     .map((n) => ({ name: n, source: state.mcp[n].source }))
-  return { dshSkills, mcpInPatch, disabledMcp, disabledSkills, skillProvider, state, sources: await readSources() }
+  return { dshSkills, mcpInPatch, disabledMcp, disabledSkills, skillProvider, state, sources: await readSources(), config: await readConfig() }
 }
 
 async function setMcpEnabled(name, enabled) {
@@ -920,6 +968,23 @@ async function setSkillEnabled(name, enabled) {
   const state = await readState()
   const safe = sanitizeSkillName(name)
   const skillsRoot = join(DSH_HOME, 'skills')
+  const rec = state.skills[safe]
+  if (rec && rec.mode === 'link') {
+    // 软连接 skill：停用=移除 junction，启用=重建 junction
+    if (enabled) {
+      if (rec.dst && rec.src && !(await exists(rec.dst))) {
+        try {
+          if (rec.kind === 'flat') { await symlinkFile(rec.src, rec.dst) } else { await symlinkDir(rec.src, rec.dst) }
+        } catch { /* ignore */ }
+      }
+      rec.enabled = true
+    } else {
+      if (rec.dst && (await exists(rec.dst))) await removePath(rec.dst)
+      rec.enabled = false
+    }
+    await writeState(state)
+    return { name: safe, enabled: !!enabled }
+  }
   const dirPath = join(skillsRoot, safe)
   const md = join(dirPath, 'SKILL.md')
   const mdDisabled = join(dirPath, 'SKILL.md.disabled')
@@ -1073,6 +1138,25 @@ function registerTools(ctx) {
   }))
 
   ctx.tools.register(textTool({
+    name: 'agent_sync_config',
+    description: "Get or set the plugin configuration. action \"get\" returns { skillSyncMode: \"copy\"|\"link\", syncProfiles: \"all\"|\"desktop\"|\"web\" }. action \"set\" accepts skillSyncMode and/or syncProfiles and persists to <dshHome>/agent-sync/config.json. skillSyncMode controls how Skills are synced (copy = duplicate files, link = junction to the source dir so source updates are reflected live); syncProfiles controls which profile(s) MCP servers are written to. Stored in <dshHome>/agent-sync/config.json.",
+    parameters: {
+      action: { type: 'string', enum: ['get', 'set'], required: true, description: 'get | set' },
+      skillSyncMode: { type: 'string', enum: ['copy', 'link'], description: 'Skill sync mode (set).' },
+      syncProfiles: { type: 'string', enum: ['all', 'desktop', 'web'], description: 'MCP sync target profile(s) (set).' },
+    },
+    execute: async (args) => {
+      try {
+        return args.action === 'set'
+          ? JSON.stringify({ ok: true, config: await setConfig(args) }, null, 2)
+          : JSON.stringify({ ok: true, config: await readConfig() }, null, 2)
+      } catch (e) {
+        return JSON.stringify({ ok: false, error: String((e && e.message) || e) })
+      }
+    },
+  }))
+
+  ctx.tools.register(textTool({
     name: 'agent_sync_toggle',
     description: 'Enable or disable a synced MCP server or skill in DSH. type "mcp": toggles the mcp-<name> entry — disabled servers are excluded from every profile\'s cordis.patch.yml until re-enabled. type "skill": toggles the copied skill by renaming its SKILL.md to SKILL.md.disabled (or back), which hides it from DSH discovery. Pass the exact name shown by agent_sync_status. Returns the new enabled state.',
     parameters: {
@@ -1197,6 +1281,13 @@ function registerRoutes(ctx) {
     try {
       const a = await readArgs(req)
       json(res, a.type === 'skill' ? await removeSkill(a.name) : await removeMcp(a.name))
+    } catch (e) { json(res, { ok: false, error: String((e && e.message) || e) }, 500) }
+  })
+
+  route('/dsh-agent-sync/config', async (req, res) => {
+    try {
+      const a = await readArgs(req)
+      json(res, a.action === 'set' ? await setConfig(a) : await readConfig())
     } catch (e) { json(res, { ok: false, error: String((e && e.message) || e) }, 500) }
   })
 
