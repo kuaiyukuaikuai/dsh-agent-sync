@@ -268,7 +268,7 @@
     function openDetail(type, item) { upd({ detail: { type: type, item: item } }) }
     function closeDetail() { upd({ detail: null }) }
 
-    // 可同步列表：卡片 + 勾选（点击卡片看详情）
+    // 可同步列表：卡片 + 勾选（点击卡片看详情；来源只在详情页显示）
     var syncMcpCards = visibleMcp.map(function (m) {
       return h('div', { key: 'mcp-card-' + m.name, className: 'ags-card', onClick: function () { openDetail('mcp', m) } },
         h('div', { className: 'ags-card-head' },
@@ -276,7 +276,6 @@
           h('span', { className: 'ags-tag' }, m.transport || '?')),
         h('div', { className: 'ags-card-meta' }, (m.command || m.url || '') + (m.error ? ' (' + m.error + ')' : '')),
         h('div', { className: 'ags-card-foot' },
-          sourceTags(m.sources),
           h('label', { onClick: stop }, chk(!!selMcp[m.name], function (v) { upd({ selMcp: Object.assign({}, selMcp, { [m.name]: v }) }) }))))
     })
     var syncSkillCards = visibleSkills.map(function (s) {
@@ -286,7 +285,6 @@
           h('span', { className: 'ags-tag' }, 'skill')),
         h('div', { className: 'ags-card-desc' }, String(s.description || '')),
         h('div', { className: 'ags-card-foot' },
-          sourceTags(s.sources),
           h('label', { onClick: stop }, chk(!!selSkill[s.name], function (v) { upd({ selSkill: Object.assign({}, selSkill, { [s.name]: v }) }) }))))
     })
 
