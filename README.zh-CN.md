@@ -9,6 +9,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22.5-green)](./package.json)
 [![DSH](https://img.shields.io/badge/DSH%20Plugin-v0.1.0-4f6ef7)](./package.json)
+[![Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 [![Plugin Market](https://img.shields.io/badge/DSH%20Plugin%20Market-awesome--dsh--plugin-8b93a1)](https://awesome-dsh-plugin.com/p/kuaiyukuaikuai/dsh-agent-sync/)
 [![PR](https://img.shields.io/badge/PRs-welcome-16a34a)](https://github.com/kuaiyukuaikuai/dsh-agent-sync/pulls)
 
