@@ -472,8 +472,9 @@ window.__ModuleLoader__.load({
       ? h('div', null,
           syncMcpCards.length ? h('div', { className: 'ags-grid' }, syncMcpCards) : h('div', { className: 'ags-empty' }, '该来源暂无 MCP 服务器'),
           h('div', { className: 'ags-foot' },
-            h('button', { className: 'ags-btn ags-btn-primary', disabled: busy || !selectedMcp.length, onClick: function () { runSync(selectedMcp, [], false) } }, '同步选中 MCP'),
-            h('label', { className: 'ags-checkall' }, chk(allMcpChecked, function () { toggleAllMcp() }), '全选本页')))
+            h('label', { className: 'ags-checkall' }, chk(allMcpChecked, function () { toggleAllMcp() }), '全选本页'),
+            h('span', { style: { flex: '1 1 auto' } }),
+            h('button', { className: 'ags-btn ags-btn-primary', disabled: busy || !selectedMcp.length, onClick: function () { runSync(selectedMcp, [], false) } }, '同步选中 MCP')))
       : h('div', null,
           syncSkillCards.length ? h('div', { className: 'ags-grid' }, syncSkillCards) : h('div', { className: 'ags-empty' }, '该来源暂无 skill'),
           h('div', { className: 'ags-foot' },
