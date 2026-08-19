@@ -14,7 +14,7 @@
 
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
-import { cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, readdir, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { DatabaseSync } from 'node:sqlite'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
