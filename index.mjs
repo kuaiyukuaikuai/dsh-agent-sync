@@ -1097,9 +1097,10 @@ async function addMcp(payload) {
   return { ok: true, name: norm.name, config: norm.config, profiles: profileResults }
 }
 
-// 迁移技能到另一作用域（全局或某工作区）：先复制到目标，成功后删除源（move）。
+// 迁移技能到另一作用域（全局或某工作区）。mode=move：复制到目标后删除源；mode=copy：保留源并记录副本。
 async function migrateSkill(payload) {
   const target = String((payload && payload.target) || '').trim()
+  const mode = payload && payload.mode === 'copy' ? 'copy' : 'move'
   const names = Array.isArray(payload && payload.names)
     ? payload.names.map((n) => sanitizeSkillName(String(n || ''))).filter(Boolean)
     : []
@@ -1113,6 +1114,11 @@ async function migrateSkill(payload) {
     if (!rec || !rec.dst) { errors.push(`${safe}: not a managed skill`); continue }
     const srcScope = rec.scope || ''
     if (srcScope === target) { errors.push(`${safe}: already in this scope`); continue }
+    const locations = [rec].concat(rec.copies || [])
+    if (locations.some((loc) => (loc.scope || '') === target)) {
+      errors.push(`${safe}: already exists in target scope`)
+      continue
+    }
     if (!(await exists(rec.dst))) { errors.push(`${safe}: source missing (${rec.dst})`); continue }
     const base = rec.kind === 'flat' ? `${safe}.md` : safe
     const targetDst = join(targetRoot, base)
@@ -1124,13 +1130,19 @@ async function migrateSkill(payload) {
       errors.push(`${safe}: copy failed — ${(e && e.message) || e}`)
       continue
     }
-    await rm(rec.dst, { recursive: true, force: true })
-    rec.dst = targetDst
-    rec.scope = target
+    if (mode === 'move') {
+      await rm(rec.dst, { recursive: true, force: true })
+      rec.dst = targetDst
+      rec.scope = target
+      rec.copies = undefined
+    } else {
+      if (!rec.copies) rec.copies = []
+      rec.copies.push({ scope: target, dst: targetDst, kind: rec.kind, mode: 'copy', enabled: true })
+    }
     migrated.push(safe)
   }
   await writeState(state)
-  return { ok: migrated.length > 0, migrated, errors, target: target || '(global)' }
+  return { ok: migrated.length > 0, migrated, errors, target: target || '(global)', mode }
 }
 
 async function status(ctx) {
@@ -1202,42 +1214,56 @@ async function setSkillEnabled(name, enabled) {
   const state = await readState()
   const safe = sanitizeSkillName(name)
   const rec = state.skills[safe]
-  const skillsRoot = rec && rec.scope ? workspaceSkillRoot(rec.scope) : join(DSH_HOME, 'skills')
-  if (rec && rec.mode === 'link') {
-    // 软连接 skill：停用=移除 junction，启用=重建 junction
+  if (!rec) {
+    // 未受管技能（磁盘上存在但 state 无记录）：回退全局改名逻辑
+    const dirPath = join(DSH_HOME, 'skills', safe)
+    const md = join(dirPath, 'SKILL.md')
+    const mdDisabled = join(dirPath, 'SKILL.md.disabled')
+    const flat = join(DSH_HOME, 'skills', `${safe}.md`)
+    const flatDisabled = join(DSH_HOME, 'skills', `${safe}.md.disabled`)
+    let did = false
     if (enabled) {
-      if (rec.dst && rec.src && !(await exists(rec.dst))) {
-        try {
-          if (rec.kind === 'flat') { await symlinkFile(rec.src, rec.dst) } else { await symlinkDir(rec.src, rec.dst) }
-        } catch { /* ignore */ }
-      }
-      rec.enabled = true
+      if (await exists(mdDisabled)) { await rename(mdDisabled, md); did = true }
+      else if (await exists(flatDisabled)) { await rename(flatDisabled, flat); did = true }
     } else {
-      if (rec.dst && (await exists(rec.dst))) await removePath(rec.dst)
-      rec.enabled = false
+      if (await exists(md)) { await rename(md, mdDisabled); did = true }
+      else if (await exists(flat)) { await rename(flat, flatDisabled); did = true }
     }
+    if (!did) return { ok: false, error: `skill not found in ~/.dsh/skills: ${safe}` }
+    state.skills[safe] = { source: 'user', enabled: !!enabled, syncedAt: new Date().toISOString() }
     await writeState(state)
     return { name: safe, enabled: !!enabled }
   }
-  const dirPath = join(skillsRoot, safe)
-  const md = join(dirPath, 'SKILL.md')
-  const mdDisabled = join(dirPath, 'SKILL.md.disabled')
-  const flat = join(skillsRoot, `${safe}.md`)
-  const flatDisabled = join(skillsRoot, `${safe}.md.disabled`)
-  let did = false
-  if (enabled) {
-    if (await exists(mdDisabled)) { await rename(mdDisabled, md); did = true }
-    else if (await exists(flatDisabled)) { await rename(flatDisabled, flat); did = true }
-  } else {
-    if (await exists(md)) { await rename(md, mdDisabled); did = true }
-    else if (await exists(flat)) { await rename(flat, flatDisabled); did = true }
+  // 受管技能：对每个位置（primary + copies）生效
+  const locations = [rec].concat(rec.copies || [])
+  let any = false
+  for (const loc of locations) {
+    if (!loc || !loc.dst) continue
+    if (loc.mode === 'link') {
+      if (enabled) {
+        if (loc.src && !(await exists(loc.dst))) {
+          try { if (loc.kind === 'flat') { await symlinkFile(loc.src, loc.dst) } else { await symlinkDir(loc.src, loc.dst) } } catch { /* ignore */ }
+        }
+      } else {
+        if (await exists(loc.dst)) await removePath(loc.dst)
+      }
+      loc.enabled = enabled
+      any = true
+      continue
+    }
+    if (loc.kind === 'flat') {
+      const flat = loc.dst
+      const flatDisabled = `${loc.dst}.disabled`
+      if (enabled && (await exists(flatDisabled))) { await rename(flatDisabled, flat); loc.enabled = true; any = true }
+      else if (!enabled && (await exists(flat))) { await rename(flat, flatDisabled); loc.enabled = false; any = true }
+    } else {
+      const md = join(loc.dst, 'SKILL.md')
+      const mdDisabled = join(loc.dst, 'SKILL.md.disabled')
+      if (enabled && (await exists(mdDisabled))) { await rename(mdDisabled, md); loc.enabled = true; any = true }
+      else if (!enabled && (await exists(md))) { await rename(md, mdDisabled); loc.enabled = false; any = true }
+    }
   }
-  if (!did) return { ok: false, error: `skill not found in ~/.dsh/skills: ${safe}` }
-  if (state.skills[safe]) {
-    state.skills[safe].enabled = !!enabled
-  } else {
-    state.skills[safe] = { source: 'user', enabled: !!enabled, syncedAt: new Date().toISOString() }
-  }
+  if (!any) return { ok: false, error: `skill not found on disk: ${safe}` }
   await writeState(state)
   return { name: safe, enabled: !!enabled }
 }
@@ -1264,17 +1290,28 @@ async function removeMcp(name) {
 async function removeSkill(name) {
   const state = await readState()
   const safe = sanitizeSkillName(name)
-  let dst = null
-  if (state.skills[safe] && state.skills[safe].dst) {
-    dst = state.skills[safe].dst
+  const removed = []
+  const rec = state.skills[safe]
+  if (rec) {
+    const locations = [rec].concat(rec.copies || [])
+    for (const loc of locations) {
+      if (loc && loc.dst && (await exists(loc.dst))) {
+        await removePath(loc.dst)
+        removed.push(loc.dst)
+      }
+    }
+    delete state.skills[safe]
   } else {
+    let dst = null
     if (await exists(join(DSH_HOME, 'skills', safe))) dst = join(DSH_HOME, 'skills', safe)
     else if (await exists(join(DSH_HOME, 'skills', `${safe}.md`))) dst = join(DSH_HOME, 'skills', `${safe}.md`)
+    if (dst && (await exists(dst))) {
+      await removePath(dst)
+      removed.push(dst)
+    }
   }
-  if (state.skills[safe]) delete state.skills[safe]
-  if (dst && (await exists(dst))) await removePath(dst)
   await writeState(state)
-  return { removed: safe, path: dst }
+  return { removed: safe, paths: removed }
 }
 
 // ---------------------------------------------------------------------------

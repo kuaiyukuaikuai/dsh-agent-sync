@@ -153,6 +153,7 @@ window.__ModuleLoader__.load({
     var showMigrate = !!state[0].showMigrate
     var migrateSel = state[0].migrateSel || {}
     var migrateTarget = state[0].migrateTarget || ''
+    var migrateMode = state[0].migrateMode || 'move'
     var addMcpForm = state[0].addMcpForm || { name: '', transport: 'stdio', command: '', args: '', url: '', env: '', headers: '' }
     var addPath = state[0].addPath || ''
     var addScope = state[0].addScope || ''
@@ -645,10 +646,16 @@ window.__ModuleLoader__.load({
     function submitMigrate() {
       var names = migrateSkillsData.filter(function (s) { return migrateSel[s.name] }).map(function (s) { return s.name })
       if (!names.length) { upd({ msg: '请选择要迁移的技能' }); return }
-      call('migrate-skill', { names: names, target: migrateTarget }).then(function (r) {
+      call('migrate-skill', { names: names, target: migrateTarget, mode: migrateMode }).then(function (r) {
+        var extra = ''
+        if (r && r.ok) {
+          // 迁移成功后自动切到目标作用域并刷新，让迁移结果可见
+          if (migrateTarget === '') { extra = 'global' } else { extra = migrateTarget }
+        }
         upd({
-          msg: r && r.ok ? ('已迁移 ' + r.migrated.length + ' 个技能' + (r.errors && r.errors.length ? '；跳过 ' + r.errors.length : '')) : ('迁移失败: ' + (r && r.error)),
-          showMigrate: false, migrateSel: {}, migrateTarget: '',
+          msg: r && r.ok ? ('已' + (migrateMode === 'copy' ? '复制' : '迁移') + ' ' + r.migrated.length + ' 个技能' + (r.errors && r.errors.length ? '；跳过 ' + r.errors.length : '')) : ('迁移失败: ' + (r && r.error)),
+          showMigrate: false, migrateSel: {}, migrateTarget: '', migrateMode: 'move',
+          ...(extra ? { skillScope: extra } : {}),
         })
         loadAll()
       }).catch(function (e) { upd({ msg: '迁移失败: ' + String((e && e.message) || e) }) })
@@ -682,9 +689,16 @@ window.__ModuleLoader__.load({
                     migrateTargets.map(function (t) {
                       return h('option', { key: 'mt-' + t.value, value: t.value }, t.label)
                     })))),
+              h('div', { className: 'ags-drow' },
+                h('span', { className: 'ags-dkey' }, '方式'),
+                h('div', { className: 'ags-dval' },
+                  h('label', { style: { cursor: 'pointer', marginRight: 12 } },
+                    h('input', { type: 'radio', name: 'migrate-mode', checked: migrateMode === 'move', onChange: function () { upd({ migrateMode: 'move' }) }, style: { marginRight: 4 } }), '移动（删除源）'),
+                  h('label', { style: { cursor: 'pointer' } },
+                    h('input', { type: 'radio', name: 'migrate-mode', checked: migrateMode === 'copy', onChange: function () { upd({ migrateMode: 'copy' }) }, style: { marginRight: 4 } }), '复制（保留源）'))),
               h('div', { className: 'ags-foot' },
-                h('span', { className: 'ags-sub' }, '迁移 = 移动到目标作用域（源位置删除）'),
-                h('button', { className: 'ags-btn ags-btn-primary', style: { marginLeft: 'auto' }, disabled: skillScope === 'global' && !migrateTarget, onClick: submitMigrate }, '迁移')))))
+                h('span', { className: 'ags-sub' }, migrateMode === 'copy' ? '复制到目标作用域，源位置保留' : '迁移 = 移动到目标作用域（源位置删除）'),
+                h('button', { className: 'ags-btn ags-btn-primary', style: { marginLeft: 'auto' }, disabled: skillScope === 'global' && !migrateTarget, onClick: submitMigrate }, migrateMode === 'copy' ? '复制' : '迁移')))))
       : null
 
     // 主面板 Skills：按作用域分组显示（全局 / 工作区）
