@@ -21,9 +21,10 @@ window.__ModuleLoader__.load({
         '.ags-btn:disabled{opacity:.5;cursor:default}' +
         '.ags-btn-primary{border-color:var(--dsw-alias-brand-primary,#4f6ef7);color:var(--dsw-alias-brand-primary,#4f6ef7)}' +
         '.ags-btn-primary:hover{background:var(--dsw-alias-brand-primary,#4f6ef7);color:#fff}' +
-        '.ags-tabs{border-bottom:1px solid var(--dsw-alias-border-l2,#e5e7eb);display:flex;gap:2px;margin:4px 0;flex-wrap:wrap}' +
-        '.ags-tab{font:inherit;color:var(--dsw-alias-label-secondary,#6b7280);cursor:pointer;white-space:nowrap;background:transparent;border:none;border-bottom:2px solid transparent;padding:7px 12px;font-size:13px}' +
-        '.ags-tab-active{color:var(--dsw-alias-brand-primary,#4f6ef7);border-bottom-color:var(--dsw-alias-brand-primary,#4f6ef7);font-weight:600}' +
+        '.ags-tabs{display:flex;gap:6px;margin:4px 0;flex-wrap:wrap}' +
+        '.ags-tab{font:inherit;color:var(--dsw-alias-label-secondary,#6b7280);cursor:pointer;white-space:nowrap;background:color-mix(in srgb,var(--dsw-alias-border-l2,#d9dde3) 22%,transparent);border:1px solid transparent;border-radius:999px;padding:5px 14px;font-size:13px;line-height:1.5}' +
+        '.ags-tab:hover{border-color:var(--dsw-alias-border-l2,#d9dde3)}' +
+        '.ags-tab-active{background:var(--dsw-alias-brand-primary,#4f6ef7);border-color:var(--dsw-alias-brand-primary,#4f6ef7);color:#fff;font-weight:600}' +
         '.ags-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin-top:6px}' +
         '.ags-card{border:1px solid var(--dsw-alias-border-l1,#e5e7eb);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:4px;background:var(--dsw-alias-bg-layer-1,#ffffff);cursor:pointer}' +
         '.ags-card:hover{border-color:var(--dsw-alias-brand-primary,#4f6ef7)}' +
@@ -145,6 +146,8 @@ window.__ModuleLoader__.load({
     var showCfg = !!state[0].showCfg
     var syncScope = state[0].syncScope || ''
     var skillScope = state[0].skillScope || 'global'
+    var skillSearch = state[0].skillSearch || ''
+    var showAdd = !!state[0].showAdd
     var addPath = state[0].addPath || ''
     var addScope = state[0].addScope || ''
     var setState = state[1]
@@ -481,26 +484,98 @@ window.__ModuleLoader__.load({
               })),
             h('button', { className: 'ags-btn ags-btn-primary', disabled: busy || !selectedSkill.length, onClick: function () { runSync([], selectedSkill, false, syncScope) } }, '同步选中 Skill'),
             h('button', { className: 'ags-btn', disabled: busy || !selectedSkill.length, onClick: function () { runSync([], selectedSkill, true, syncScope) } }, '覆盖同步'),
-            h('label', { className: 'ags-checkall' }, chk(allSkillChecked, function () { toggleAllSkill() }), '全选本页')),
-          h('div', { className: 'ags-sec', style: { marginTop: 6, padding: 8 } },
-            h('div', { className: 'ags-h', style: { marginTop: 0 } }, '添加技能'),
-            h('div', null,
-              h('span', { className: 'ags-label' }, '来源路径'),
-              h('input', { className: 'ags-in', style: { width: 300 }, placeholder: '技能目录（含 SKILL.md）或 .md 文件', value: addPath, onChange: function (e) { upd({ addPath: e.target.value }) } }),
-              h('span', { className: 'ags-label' }, '添加到'),
-              h('select', { className: 'ags-in', value: addScope, onChange: function (e) { upd({ addScope: e.target.value }) } },
-                h('option', { value: '' }, '全局'),
-                workspaces.map(function (ws) {
-                  return h('option', { key: 'ad-' + ws.path, value: ws.path }, '工作区: ' + ws.label)
-                })),
-              h('button', { className: 'ags-btn ags-btn-primary', disabled: !addPath, onClick: function () { addSkillLocal() } }, '添加'))))
+            h('label', { className: 'ags-checkall' }, chk(allSkillChecked, function () { toggleAllSkill() }), '全选本页'),
+            h('button', { className: 'ags-btn ags-btn-primary', style: { marginLeft: 'auto' }, onClick: function () { upd({ showAdd: true, addScope: syncScope }) } }, '＋ 添加技能')))
 
-    function addSkillLocal() {
-      call('add-skill', { path: addPath, scope: addScope }).then(function (r) {
-        upd({ msg: r && r.ok ? ('已添加技能 ' + r.name) : ('添加失败: ' + (r && r.error)), addPath: '' })
+    // 文件读取 / 上传到宿主
+    function readFileAsText(file) {
+      return new Promise(function (resolve, reject) {
+        var r = new FileReader()
+        r.onload = function () { resolve(r.result) }
+        r.onerror = reject
+        r.readAsText(file)
+      })
+    }
+
+    function uploadSkillFiles(kind, files, scope) {
+      var name = ''
+      var skillMd = files.filter(function (x) { return /(^|\/)SKILL\.md$/i.test(x.path) })[0]
+      if (skillMd) {
+        var m = /^---[\s\S]*?^name:\s*["']?([^"'\s]+)/m.exec(skillMd.content)
+        if (m) name = m[1]
+      }
+      if (!name && kind === 'flat' && files[0]) {
+        name = files[0].path.replace(/\.md$/i, '').split(/[\\/]/).pop()
+      }
+      if (!name && files[0]) {
+        name = files[0].path.split(/[\\/]/)[0]
+      }
+      if (!name) { upd({ msg: '添加失败: 无法识别技能名' }); return }
+      call('add-skill-files', { name: name, kind: kind, scope: scope || '', files: files }).then(function (r) {
+        upd({ msg: r && r.ok ? ('已添加技能 ' + r.name) : ('添加失败: ' + (r && r.error)), showAdd: false })
         loadAll()
       }).catch(function (e) { upd({ msg: '添加失败: ' + String((e && e.message) || e) }) })
     }
+
+    function onPickFolder(e) {
+      var fileList = e.target.files
+      if (!fileList || !fileList.length) return
+      var files = []
+      var reads = []
+      for (var i = 0; i < fileList.length; i++) {
+        ;(function (f) {
+          reads.push(readFileAsText(f).then(function (content) {
+            files.push({ path: f.webkitRelativePath || f.name, content: content })
+          }))
+        })(fileList[i])
+      }
+      Promise.all(reads).then(function () { uploadSkillFiles('bundle', files, addScope) })
+      e.target.value = ''
+    }
+
+    function onPickFile(e) {
+      var f = e.target.files && e.target.files[0]
+      if (!f) return
+      readFileAsText(f).then(function (content) {
+        uploadSkillFiles('flat', [{ path: f.name, content: content }], addScope)
+      })
+      e.target.value = ''
+    }
+
+    function addSkillLocal() {
+      call('add-skill', { path: addPath, scope: addScope }).then(function (r) {
+        upd({ msg: r && r.ok ? ('已添加技能 ' + r.name) : ('添加失败: ' + (r && r.error)), addPath: '', showAdd: false })
+        loadAll()
+      }).catch(function (e) { upd({ msg: '添加失败: ' + String((e && e.message) || e) }) })
+    }
+
+    var addSkillModal = showAdd
+      ? h('div', { className: 'ags-modal', onClick: function () { upd({ showAdd: false }) } },
+          h('div', { className: 'ags-modal-box', onClick: function (e) { stop(e) } },
+            h('div', { className: 'ags-modal-head' },
+              h('span', { className: 'ags-title' }, '添加技能'),
+              h('button', { className: 'ags-btn', onClick: function () { upd({ showAdd: false }) } }, '✕ 关闭')),
+            h('div', { className: 'ags-modal-body' },
+              h('div', { className: 'ags-drow' },
+                h('span', { className: 'ags-dkey' }, '添加到'),
+                h('div', { className: 'ags-dval' },
+                  h('select', { className: 'ags-in', value: addScope, onChange: function (e) { upd({ addScope: e.target.value }) } },
+                    h('option', { value: '' }, '全局'),
+                    workspaces.map(function (ws) {
+                      return h('option', { key: 'ad-' + ws.path, value: ws.path }, '工作区: ' + ws.label)
+                    })))),
+              h('div', { className: 'ags-drow' },
+                h('span', { className: 'ags-dkey' }, '选择来源'),
+                h('div', { className: 'ags-dval' },
+                  h('label', { className: 'ags-btn ags-btn-primary', style: { display: 'inline-block', cursor: 'pointer', marginRight: 8 } },
+                    '📁 选择文件夹',
+                    h('input', { type: 'file', webkitdirectory: '', directory: '', style: { display: 'none' }, onChange: function (e) { onPickFolder(e) } })),
+                  h('label', { className: 'ags-btn', style: { display: 'inline-block', cursor: 'pointer' } },
+                    '📄 选择单个 .md',
+                    h('input', { type: 'file', accept: '.md,text/markdown', style: { display: 'none' }, onChange: function (e) { onPickFile(e) } }))),
+              h('div', { className: 'ags-foot' },
+                h('span', { className: 'ags-sub' }, '文件夹需包含 SKILL.md（目录束）；单文件需为带 frontmatter 的 .md'))))))
+      : null
 
     // 主面板 Skills：按作用域分组显示（全局 / 工作区）
     function manCardsFor(list, disabledList) {
@@ -530,9 +605,16 @@ window.__ModuleLoader__.load({
     }
 
     var activeWs = workspaceSkills.filter(function (w) { return w.path === skillScope })[0] || null
+    var q = String(skillSearch || '').trim().toLowerCase()
+    function filterSkills(list) {
+      if (!q) return list
+      return list.filter(function (s) {
+        return String(s.name || '').toLowerCase().indexOf(q) >= 0 || String(s.description || '').toLowerCase().indexOf(q) >= 0
+      })
+    }
     var skillScopeCards = skillScope === 'global'
-      ? manCardsFor(dshSkillList, disabledSkills)
-      : (activeWs ? manCardsFor(activeWs.skills || [], activeWs.disabled || []) : [])
+      ? manCardsFor(filterSkills(dshSkillList), filterSkills(disabledSkills))
+      : (activeWs ? manCardsFor(filterSkills(activeWs.skills || []), filterSkills(activeWs.disabled || [])) : [])
 
     var statusBody = stTab === 'mcp'
       ? h('div', null,
@@ -547,7 +629,9 @@ window.__ModuleLoader__.load({
               var n = (wse ? wse.skills.length + wse.disabled.length : 0)
               return h('button', { key: 'ws-' + ws.path, className: 'ags-tab' + (skillScope === ws.path ? ' ags-tab-active' : ''), onClick: function () { upd({ skillScope: ws.path }) } },
                 '📁 ' + ws.label + ' (' + n + ')')
-            })
+            }),
+            h('span', { style: { flex: '1 1 auto' } }),
+            h('input', { className: 'ags-in', style: { maxWidth: 200 }, placeholder: '🔍 搜索技能…', value: skillSearch, onChange: function (e) { upd({ skillSearch: e.target.value }) } })
           ),
           skillScopeCards.length
             ? h('div', { className: 'ags-grid' }, skillScopeCards)
@@ -621,7 +705,8 @@ window.__ModuleLoader__.load({
       view === 'main' ? mainView : syncView,
       msg ? h('div', { className: 'ags-msg' + msgClass }, msg) : null,
       detailModal,
-      settingsModal)
+      settingsModal,
+      addSkillModal)
   }
 
   function apply(ctx) {

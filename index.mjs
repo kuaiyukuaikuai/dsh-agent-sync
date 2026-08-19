@@ -995,6 +995,44 @@ async function addSkill(sourcePath, opts = {}) {
   return { ok: true, name: safe, dst, mode, scope }
 }
 
+// 从浏览器上传的文件内容添加技能（folder → bundle，单 .md → flat）。
+async function addSkillFiles(payload) {
+  const scope = (payload && payload.scope) || ''
+  const skillsRoot = scope ? workspaceSkillRoot(scope) : join(DSH_HOME, 'skills')
+  const name = String((payload && payload.name) || '').trim()
+  const kind = payload && payload.kind === 'flat' ? 'flat' : 'bundle'
+  const files = Array.isArray(payload && payload.files) ? payload.files : []
+  if (!name || !files.length) return { ok: false, error: 'name and files are required' }
+  const safe = sanitizeSkillName(name)
+  await mkdir(skillsRoot, { recursive: true })
+  const dst = kind === 'flat' ? join(skillsRoot, `${safe}.md`) : join(skillsRoot, safe)
+  if (await exists(dst)) return { ok: false, error: `skill already exists: ${safe}` }
+  if (kind === 'flat') {
+    await writeText(dst, String(files[0].content || ''))
+  } else {
+    let hasSkillMd = false
+    for (const f of files) {
+      const rel = String(f.path || '').replace(/^[\\/]+/, '').replace(/\\/g, '/')
+      if (!rel) continue
+      if (rel.toUpperCase() === 'SKILL.MD') hasSkillMd = true
+      const out = join(dst, rel)
+      await mkdir(dirname(out), { recursive: true })
+      await writeText(out, String(f.content || ''))
+    }
+    if (!hasSkillMd) {
+      await rm(dst, { recursive: true, force: true })
+      return { ok: false, error: 'folder must contain SKILL.md' }
+    }
+  }
+  const state = await readState()
+  state.skills[safe] = {
+    source: 'manual-upload', src: dst, dst, kind, mode: 'copy', scope, enabled: true,
+    syncedAt: new Date().toISOString(),
+  }
+  await writeState(state)
+  return { ok: true, name: safe, dst, scope }
+}
+
 async function status(ctx) {
   const state = await readState()
   let skillProvider = 'unavailable'
@@ -1398,6 +1436,13 @@ function registerRoutes(ctx) {
     try {
       const a = await readArgs(req)
       json(res, await addSkill(a.path, { scope: a.scope || '' }))
+    } catch (e) { json(res, { ok: false, error: String((e && e.message) || e) }, 500) }
+  })
+
+  route('/dsh-agent-sync/add-skill-files', async (req, res) => {
+    try {
+      const a = await readArgs(req)
+      json(res, await addSkillFiles(a))
     } catch (e) { json(res, { ok: false, error: String((e && e.message) || e) }, 500) }
   })
 
