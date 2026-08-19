@@ -150,6 +150,9 @@ window.__ModuleLoader__.load({
     var skillSearch = state[0].skillSearch || ''
     var showAdd = !!state[0].showAdd
     var showAddMcp = !!state[0].showAddMcp
+    var showMigrate = !!state[0].showMigrate
+    var migrateSel = state[0].migrateSel || {}
+    var migrateTarget = state[0].migrateTarget || ''
     var addMcpForm = state[0].addMcpForm || { name: '', transport: 'stdio', command: '', args: '', url: '', env: '', headers: '' }
     var addPath = state[0].addPath || ''
     var addScope = state[0].addScope || ''
@@ -630,6 +633,60 @@ window.__ModuleLoader__.load({
                 h('button', { className: 'ags-btn ags-btn-primary', style: { marginLeft: 'auto' }, disabled: !addMcpForm.name, onClick: submitAddMcp }, '保存')))))
       : null
 
+    // 迁移技能弹窗（模仿 dsh-skill-mcp-panel 的迁移：移动到目标作用域）
+    var migrateSkillsData = skillScope === 'global'
+      ? dshSkillList.concat(disabledSkills)
+      : (activeWs ? activeWs.skills.concat(activeWs.disabled) : [])
+    var migrateTargets = [{ label: '全局 (~/.dsh/skills)', value: '' }].concat(
+      workspaces.filter(function (ws) { return ws.path !== skillScope }).map(function (ws) {
+        return { label: '工作区: ' + ws.label, value: ws.path }
+      }))
+
+    function submitMigrate() {
+      var names = migrateSkillsData.filter(function (s) { return migrateSel[s.name] }).map(function (s) { return s.name })
+      if (!names.length) { upd({ msg: '请选择要迁移的技能' }); return }
+      call('migrate-skill', { names: names, target: migrateTarget }).then(function (r) {
+        upd({
+          msg: r && r.ok ? ('已迁移 ' + r.migrated.length + ' 个技能' + (r.errors && r.errors.length ? '；跳过 ' + r.errors.length : '')) : ('迁移失败: ' + (r && r.error)),
+          showMigrate: false, migrateSel: {}, migrateTarget: '',
+        })
+        loadAll()
+      }).catch(function (e) { upd({ msg: '迁移失败: ' + String((e && e.message) || e) }) })
+    }
+
+    var migrateModal = showMigrate
+      ? h('div', { className: 'ags-modal', onClick: function () { upd({ showMigrate: false }) } },
+          h('div', { className: 'ags-modal-box', onClick: function (e) { stop(e) } },
+            h('div', { className: 'ags-modal-head' },
+              h('span', { className: 'ags-title' }, '迁移技能'),
+              h('button', { className: 'ags-btn', onClick: function () { upd({ showMigrate: false }) } }, '✕ 关闭')),
+            h('div', { className: 'ags-modal-body' },
+              h('div', { className: 'ags-drow' },
+                h('span', { className: 'ags-dkey' }, '选择技能'),
+                h('div', { className: 'ags-dval', style: { maxHeight: 220, overflow: 'auto' } },
+                  migrateSkillsData.length
+                    ? migrateSkillsData.map(function (s) {
+                        return h('label', { key: 'mg-' + s.name, style: { display: 'block', padding: '2px 0', cursor: 'pointer' } },
+                          chk(!!migrateSel[s.name], function (v) {
+                            var n = Object.assign({}, migrateSel)
+                            n[s.name] = v
+                            upd({ migrateSel: n })
+                          }),
+                          ' ' + s.name)
+                      })
+                    : h('div', { className: 'ags-empty' }, '当前作用域没有技能'))),
+              h('div', { className: 'ags-drow' },
+                h('span', { className: 'ags-dkey' }, '迁移到'),
+                h('div', { className: 'ags-dval' },
+                  h('select', { className: 'ags-in', value: migrateTarget, onChange: function (e) { upd({ migrateTarget: e.target.value }) } },
+                    migrateTargets.map(function (t) {
+                      return h('option', { key: 'mt-' + t.value, value: t.value }, t.label)
+                    })))),
+              h('div', { className: 'ags-foot' },
+                h('span', { className: 'ags-sub' }, '迁移 = 移动到目标作用域（源位置删除）'),
+                h('button', { className: 'ags-btn ags-btn-primary', style: { marginLeft: 'auto' }, disabled: skillScope === 'global' && !migrateTarget, onClick: submitMigrate }, '迁移')))))
+      : null
+
     // 主面板 Skills：按作用域分组显示（全局 / 工作区）
     function manCardsFor(list, disabledList) {
       return list.map(function (sk) {
@@ -705,7 +762,8 @@ window.__ModuleLoader__.load({
             h('button', { className: 'ags-tab' + (stTab === 'mcp' ? ' ags-tab-active' : ''), onClick: function () { upd({ stTab: 'mcp' }) } }, 'MCP'),
             h('button', { className: 'ags-tab' + (stTab === 'skills' ? ' ags-tab-active' : ''), onClick: function () { upd({ stTab: 'skills' }) } }, 'Skills')
           ),
-          h('span', { style: { flex: '1 1 0', display: 'flex', justifyContent: 'flex-end' } },
+          h('span', { style: { flex: '1 1 0', display: 'flex', justifyContent: 'flex-end', gap: 6 } },
+            stTab === 'skills' ? h('button', { className: 'ags-btn', onClick: function () { upd({ showMigrate: true, migrateTarget: skillScope === 'global' ? (workspaces[0] ? workspaces[0].path : '') : '', migrateSel: {} }) } }, '⇄ 迁移技能') : null,
             h('button', { className: 'ags-btn ags-btn-primary', onClick: function () {
               if (stTab === 'mcp') { upd({ showAddMcp: true }) } else { upd({ showAdd: true, addScope: syncScope }) }
             } }, stTab === 'mcp' ? '＋ 添加 MCP' : '＋ 添加 Skill'))
@@ -762,7 +820,8 @@ window.__ModuleLoader__.load({
       detailModal,
       settingsModal,
       addSkillModal,
-      addMcpModal)
+      addMcpModal,
+      migrateModal)
   }
 
   function apply(ctx) {

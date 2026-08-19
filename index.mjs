@@ -1097,6 +1097,42 @@ async function addMcp(payload) {
   return { ok: true, name: norm.name, config: norm.config, profiles: profileResults }
 }
 
+// 迁移技能到另一作用域（全局或某工作区）：先复制到目标，成功后删除源（move）。
+async function migrateSkill(payload) {
+  const target = String((payload && payload.target) || '').trim()
+  const names = Array.isArray(payload && payload.names)
+    ? payload.names.map((n) => sanitizeSkillName(String(n || ''))).filter(Boolean)
+    : []
+  if (!names.length) return { ok: false, error: 'no skills selected' }
+  const state = await readState()
+  const targetRoot = target ? workspaceSkillRoot(target) : join(DSH_HOME, 'skills')
+  const migrated = []
+  const errors = []
+  for (const safe of names) {
+    const rec = state.skills[safe]
+    if (!rec || !rec.dst) { errors.push(`${safe}: not a managed skill`); continue }
+    const srcScope = rec.scope || ''
+    if (srcScope === target) { errors.push(`${safe}: already in this scope`); continue }
+    if (!(await exists(rec.dst))) { errors.push(`${safe}: source missing (${rec.dst})`); continue }
+    const base = rec.kind === 'flat' ? `${safe}.md` : safe
+    const targetDst = join(targetRoot, base)
+    if (await exists(targetDst)) { errors.push(`${safe}: target already exists`); continue }
+    await mkdir(targetRoot, { recursive: true })
+    try {
+      await copyPath(rec.dst, targetDst)
+    } catch (e) {
+      errors.push(`${safe}: copy failed — ${(e && e.message) || e}`)
+      continue
+    }
+    await rm(rec.dst, { recursive: true, force: true })
+    rec.dst = targetDst
+    rec.scope = target
+    migrated.push(safe)
+  }
+  await writeState(state)
+  return { ok: migrated.length > 0, migrated, errors, target: target || '(global)' }
+}
+
 async function status(ctx) {
   const state = await readState()
   let skillProvider = 'unavailable'
@@ -1507,6 +1543,13 @@ function registerRoutes(ctx) {
     try {
       const a = await readArgs(req)
       json(res, await addSkillFiles(a))
+    } catch (e) { json(res, { ok: false, error: String((e && e.message) || e) }, 500) }
+  })
+
+  route('/dsh-agent-sync/migrate-skill', async (req, res) => {
+    try {
+      const a = await readArgs(req)
+      json(res, await migrateSkill(a))
     } catch (e) { json(res, { ok: false, error: String((e && e.message) || e) }, 500) }
   })
 
