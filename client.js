@@ -63,8 +63,8 @@
   var h = React.createElement
   var SOURCE_LABELS = { codex: 'Codex', claude: 'Claude Code', ccswitch: 'cc-switch', hermes: 'Hermes', opencode: 'opencode', gemini: 'Gemini', grok: 'Grok', kimi: 'Kimi', codebuddy: 'CodeBuddy', trae: 'Trae', openclaw: 'OpenClaw', qoder: 'Qoder', workbuddy: 'WorkBuddy', zcode: 'Zcode', lingma: '通义灵码', codemoss: 'CodeMoss', copilot: 'Copilot', cursor: 'Cursor', windsurf: 'Windsurf', cline: 'Cline', roo: 'Roo Code', qwen: 'Qwen Code', custom: '自定义' }
   var TAB_KEYS = ['all', 'codex', 'claude', 'ccswitch', 'hermes', 'opencode', 'gemini', 'grok', 'kimi', 'codebuddy', 'trae', 'openclaw', 'qoder', 'workbuddy', 'zcode', 'lingma', 'codemoss', 'copilot', 'cursor', 'windsurf', 'cline', 'roo', 'qwen', 'custom']
-  var MAIN_TABS = ['all', 'codex', 'claude', 'ccswitch', 'hermes', 'opencode', 'openclaw', 'grok', 'custom']
-  var MORE_TABS = ['gemini', 'kimi', 'codebuddy', 'trae', 'qoder', 'workbuddy', 'zcode', 'lingma', 'codemoss', 'copilot', 'cursor', 'windsurf', 'cline', 'roo', 'qwen']
+  var MAIN_TABS = ['all', 'ccswitch', 'claude', 'codex', 'hermes', 'openclaw', 'opencode', 'custom']
+  var MORE_TABS = ['cline', 'codebuddy', 'codemoss', 'copilot', 'cursor', 'gemini', 'kimi', 'qoder', 'qwen', 'roo', 'trae', 'windsurf', 'workbuddy', 'zcode', 'lingma']
 
   function call(method, args) {
     return fetch('/dsh-agent-sync/' + method, {
