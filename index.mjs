@@ -1328,7 +1328,11 @@ export function apply(ctx) {
 
   try {
     registerTools(ctx)
-    disposers.push(...registerRoutes(ctx))
+    // webServer exists only under the web profile and may not be ready at
+    // apply time — register routes reactively like other web plugins.
+    ctx.inject(['webServer'], (scope) => {
+      disposers.push(...registerRoutes(scope))
+    })
   } catch (error) {
     ctx.logger.warn(`dsh-agent-sync: ${error?.stack || error}`)
   }
