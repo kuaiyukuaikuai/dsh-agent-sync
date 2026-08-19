@@ -13,7 +13,7 @@
 // so there are no runtime subprocess or helper-script dependencies.
 
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { DatabaseSync } from 'node:sqlite'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -160,10 +160,9 @@ async function scanSkillsDir(dir) {
   return [...seen.values()]
 }
 
-// 直接扫描 $DSH_HOME/skills 文件系统作为「真实状态」来源（不依赖会话的 skill 服务）：
+// 直接扫描某个 skills 根目录作为「真实状态」来源（不依赖会话的 skill 服务）：
 // 目录束 <name>/SKILL.md（或 .disabled）与单文件 <name>.md（或 .md.disabled）。
-async function listSkillsOnDisk() {
-  const skillsRoot = join(DSH_HOME, 'skills')
+async function listSkillsOnDisk(skillsRoot = join(DSH_HOME, 'skills')) {
   const names = await listDir(skillsRoot)
   const out = []
   for (const n of names) {
@@ -179,6 +178,42 @@ async function listSkillsOnDisk() {
     if (!file) continue
     const meta = parseSkillFrontmatter((await readText(file)) || '')
     out.push({ name: meta.name || n.replace(/\.md(\.disabled)?$/i, ''), description: meta.description || '', enabled: !!enabled, kind, path: full })
+  }
+  return out
+}
+
+// 工作区技能根：<workspace>/.dsh/skills（与 DSH 的项目级 skill 发现一致）。
+function workspaceSkillRoot(wsPath) {
+  return join(wsPath, '.dsh', 'skills')
+}
+
+// 从 workspaceRegistry / sessions 服务发现本机已知工作区（去重、过滤失效目录）。
+async function listWorkspaces(ctx) {
+  const out = []
+  const seen = new Set()
+  const add = (path, label) => {
+    if (!path || typeof path !== 'string' || path === '') return
+    const key = process.platform === 'win32' ? path.toLowerCase() : path
+    if (seen.has(key)) return
+    seen.add(key)
+    out.push({ path, label: label || basename(path) || path })
+  }
+  const reg = ctx ? ctx.get('workspaceRegistry') : undefined
+  if (reg && typeof reg.list === 'function') {
+    try {
+      for (const ws of reg.list()) {
+        if (ws && ws.path) add(ws.path, ws.title)
+      }
+    } catch { /* registry unavailable */ }
+  }
+  const sessions = ctx ? ctx.get('sessions') : undefined
+  if (sessions && typeof sessions.list === 'function') {
+    try {
+      for (const s of sessions.list()) {
+        const cwd = s && s.header ? s.header.cwd : undefined
+        if (cwd) add(cwd)
+      }
+    } catch { /* sessions unavailable */ }
   }
   return out
 }
@@ -876,7 +911,8 @@ async function syncSkills(selected, opts = {}) {
   const state = await readState()
   const byName = await collectSkillCandidates(opts.sources)
   const names = resolveSelection(selected, [...byName.keys()])
-  const skillsRoot = join(DSH_HOME, 'skills')
+  const scope = opts.scope || ''
+  const skillsRoot = scope ? workspaceSkillRoot(scope) : join(DSH_HOME, 'skills')
   const synced = []
   const skipped = []
   for (const name of names) {
@@ -886,10 +922,11 @@ async function syncSkills(selected, opts = {}) {
     const dst = item.kind === 'flat' ? join(skillsRoot, `${safe}.md`) : join(skillsRoot, safe)
     const existsDst = await exists(dst)
     if (existsDst && !opts.overwrite) {
-      skipped.push({ name, reason: 'already exists in ~/.dsh/skills (use overwrite: true)' })
+      skipped.push({ name, reason: 'already exists in target skills dir (use overwrite: true)' })
       continue
     }
     if (existsDst) await removePath(dst)
+    await mkdir(skillsRoot, { recursive: true })
     let mode = 'copy'
     try {
       if (config.skillSyncMode === 'link') {
@@ -903,14 +940,59 @@ async function syncSkills(selected, opts = {}) {
       mode = 'copy'
     }
     state.skills[safe] = {
-      source: item.source, src: item.src, dst, kind: item.kind, mode,
+      source: item.source, src: item.src, dst, kind: item.kind, mode, scope,
       enabled: state.skills[safe] ? state.skills[safe].enabled !== false : true,
       syncedAt: new Date().toISOString(),
     }
-    synced.push({ name: safe, dst, mode })
+    synced.push({ name: safe, dst, mode, scope })
   }
   await writeState(state)
   return { synced, skipped }
+}
+
+// 从本地文件/目录添加一个技能到指定作用域（全局或某工作区）。
+async function addSkill(sourcePath, opts = {}) {
+  const scope = opts.scope || ''
+  const skillsRoot = scope ? workspaceSkillRoot(scope) : join(DSH_HOME, 'skills')
+  const src = String(sourcePath || '').trim()
+  if (!src) return { ok: false, error: 'source path is required' }
+  let kind = null
+  let name = null
+  const md = join(src, 'SKILL.md')
+  if (await exists(md)) {
+    kind = 'bundle'
+    const meta = parseSkillFrontmatter((await readText(md)) || '')
+    name = meta.name
+  } else if (src.toLowerCase().endsWith('.md')) {
+    kind = 'flat'
+    const meta = parseSkillFrontmatter((await readText(src)) || '')
+    name = meta.name
+  }
+  if (!name) return { ok: false, error: 'not a valid skill (needs a directory with SKILL.md or a .md file with frontmatter)' }
+  const safe = sanitizeSkillName(name)
+  const dst = kind === 'flat' ? join(skillsRoot, `${safe}.md`) : join(skillsRoot, safe)
+  await mkdir(skillsRoot, { recursive: true })
+  if (await exists(dst)) return { ok: false, error: `skill already exists: ${safe}` }
+  const config = await readConfig()
+  let mode = 'copy'
+  try {
+    if (config.skillSyncMode === 'link') {
+      if (kind === 'flat') { await symlinkFile(src, dst) } else { await symlinkDir(src, dst) }
+      mode = 'link'
+    } else {
+      await copyPath(src, dst)
+    }
+  } catch {
+    await copyPath(src, dst)
+    mode = 'copy'
+  }
+  const state = await readState()
+  state.skills[safe] = {
+    source: 'manual', src, dst, kind, mode, scope, enabled: true,
+    syncedAt: new Date().toISOString(),
+  }
+  await writeState(state)
+  return { ok: true, name: safe, dst, mode, scope }
 }
 
 async function status(ctx) {
@@ -941,7 +1023,21 @@ async function status(ctx) {
   const disabledMcp = Object.keys(state.mcp)
     .filter((n) => state.mcp[n].enabled === false)
     .map((n) => ({ name: n, source: state.mcp[n].source }))
-  return { dshSkills, mcpInPatch, disabledMcp, disabledSkills, skillProvider, state, sources: await readSources(), config: await readConfig() }
+  const workspaces = await listWorkspaces(ctx)
+  const workspaceSkills = []
+  for (const ws of workspaces) {
+    const disk = await listSkillsOnDisk(workspaceSkillRoot(ws.path))
+    if (!disk.length) continue
+    workspaceSkills.push({
+      path: ws.path, label: ws.label,
+      skills: disk.filter((s) => s.enabled).map((s) => ({ name: s.name, description: s.description, path: s.path, kind: s.kind })),
+      disabled: disk.filter((s) => !s.enabled).map((s) => ({
+        name: s.name,
+        source: (state.skills[s.name] && state.skills[s.name].source) || 'user',
+      })),
+    })
+  }
+  return { dshSkills, mcpInPatch, disabledMcp, disabledSkills, skillProvider, state, sources: await readSources(), config: await readConfig(), workspaces, workspaceSkills }
 }
 
 async function setMcpEnabled(name, enabled) {
@@ -967,8 +1063,8 @@ async function setMcpEnabled(name, enabled) {
 async function setSkillEnabled(name, enabled) {
   const state = await readState()
   const safe = sanitizeSkillName(name)
-  const skillsRoot = join(DSH_HOME, 'skills')
   const rec = state.skills[safe]
+  const skillsRoot = rec && rec.scope ? workspaceSkillRoot(rec.scope) : join(DSH_HOME, 'skills')
   if (rec && rec.mode === 'link') {
     // 软连接 skill：停用=移除 junction，启用=重建 junction
     if (enabled) {
@@ -1115,18 +1211,37 @@ function registerTools(ctx) {
 
   ctx.tools.register(textTool({
     name: 'agent_sync_do',
-    description: "Sync selected MCP servers and/or skills from other agents into DSH. MCP servers are written into each DSH profile's cordis.patch.yml as @deepseek-ai/dsh-mcp-client instances (the file is repaired if it was invalid). The desktop GUI shell composes its profile once at boot, so MCP entries activate on the next DSH Desktop restart; the dsh CLI/headless boot hot-applies profile patches via HMR. Skills are copied into <dshHome>/skills and are auto-discovered by sessions whose agent preset mounts the skill-filesystem provider. Pass mcp: [\"all\"] or server names, skills: [\"all\"] or skill names (as shown by agent_sync_scan). overwrite:true replaces an existing DSH skill with the same name. Returns a summary of synced/skipped items and which profile patch files were updated.",
+    description: "Sync selected MCP servers and/or skills from other agents into DSH. MCP servers are written into each DSH profile's cordis.patch.yml as @deepseek-ai/dsh-mcp-client instances (the file is repaired if it was invalid). The desktop GUI shell composes its profile once at boot, so MCP entries activate on the next DSH Desktop restart; the dsh CLI/headless boot hot-applies profile patches via HMR. Skills are copied into <dshHome>/skills (global) or <workspace>/.dsh/skills when scope is a workspace path (or linked via junction when skillSyncMode=link) and are auto-discovered by sessions whose agent preset mounts the skill-filesystem provider. Pass mcp: [\"all\"] or server names, skills: [\"all\"] or skill names (as shown by agent_sync_scan). overwrite:true replaces an existing DSH skill with the same name. Returns a summary of synced/skipped items and which profile patch files were updated.",
     parameters: {
       mcp: { type: 'array', items: { type: 'string' }, description: 'MCP server names to sync (\"all\" = every discovered server).' },
       skills: { type: 'array', items: { type: 'string' }, description: 'Skill names to sync (\"all\" = every discovered skill).' },
       sources: { type: 'array', items: { type: 'string' }, description: 'Restrict scan to these sources.' },
       overwrite: { type: 'boolean', description: 'Overwrite an existing DSH skill with the same name. Default false.' },
       profile: { type: 'string', description: "Only write MCP entries into this profile's patch file (e.g. \"desktop\"). Default: all profiles." },
+      scope: { type: 'string', description: 'Skill target scope: empty/global = <dshHome>/skills; or a workspace path = <workspace>/.dsh/skills.' },
     },
     execute: async (args) => {
       const mcp = args.mcp && args.mcp.length ? await syncMcp(args.mcp, { sources: args.sources, profile: args.profile }) : null
-      const skills = args.skills && args.skills.length ? await syncSkills(args.skills, { sources: args.sources, overwrite: !!args.overwrite }) : null
+      const skills = args.skills && args.skills.length
+        ? await syncSkills(args.skills, { sources: args.sources, overwrite: !!args.overwrite, scope: args.scope || '' })
+        : null
       return JSON.stringify({ ok: true, mcp, skills }, null, 2)
+    },
+  }))
+
+  ctx.tools.register(textTool({
+    name: 'agent_sync_add_skill',
+    description: 'Add a skill from a local file or directory into DSH. source: a directory containing SKILL.md (bundle) or a .md file with frontmatter (flat). scope: empty/global = <dshHome>/skills, or a workspace path = <workspace>/.dsh/skills. Uses config skillSyncMode (copy or link). Returns the added skill name, target path, mode and scope.',
+    parameters: {
+      source: { type: 'string', required: true, description: 'Absolute path to the skill directory (with SKILL.md) or .md file.' },
+      scope: { type: 'string', description: 'Target scope: empty/global or a workspace path.' },
+    },
+    execute: async (args) => {
+      try {
+        return JSON.stringify(await addSkill(args.source, { scope: args.scope || '' }), null, 2)
+      } catch (e) {
+        return JSON.stringify({ ok: false, error: String((e && e.message) || e) })
+      }
     },
   }))
 
@@ -1272,8 +1387,17 @@ function registerRoutes(ctx) {
     try {
       const a = await readArgs(req)
       const mcp = a.mcp && a.mcp.length ? await syncMcp(a.mcp, { sources: a.sources, profile: a.profile }) : null
-      const skills = a.skills && a.skills.length ? await syncSkills(a.skills, { sources: a.sources, overwrite: !!a.overwrite }) : null
+      const skills = a.skills && a.skills.length
+        ? await syncSkills(a.skills, { sources: a.sources, overwrite: !!a.overwrite, scope: a.scope || '' })
+        : null
       json(res, { ok: true, mcp, skills })
+    } catch (e) { json(res, { ok: false, error: String((e && e.message) || e) }, 500) }
+  })
+
+  route('/dsh-agent-sync/add-skill', async (req, res) => {
+    try {
+      const a = await readArgs(req)
+      json(res, await addSkill(a.path, { scope: a.scope || '' }))
     } catch (e) { json(res, { ok: false, error: String((e && e.message) || e) }, 500) }
   })
 

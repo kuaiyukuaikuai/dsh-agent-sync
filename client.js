@@ -143,6 +143,10 @@ window.__ModuleLoader__.load({
     var cfg = state[0].cfg || null
     var cfgDraft = state[0].cfgDraft || { skillSyncMode: 'copy', syncProfiles: 'all' }
     var showCfg = !!state[0].showCfg
+    var syncScope = state[0].syncScope || ''
+    var skillScope = state[0].skillScope || 'global'
+    var addPath = state[0].addPath || ''
+    var addScope = state[0].addScope || ''
     var setState = state[1]
     var upd = function (patch) { setState(function (s) { return Object.assign({}, s, patch) }) }
     function overrideKey(type, name) { return type + ':' + name }
@@ -201,9 +205,9 @@ window.__ModuleLoader__.load({
       upd({ selSkill: next })
     }
 
-    function runSync(mcpNames, skillNames, overwrite) {
+    function runSync(mcpNames, skillNames, overwrite, scope) {
       upd({ busy: true, msg: '' })
-      call('sync', { mcp: mcpNames, skills: skillNames, overwrite: !!overwrite }).then(function (res) {
+      call('sync', { mcp: mcpNames, skills: skillNames, overwrite: !!overwrite, scope: scope || '' }).then(function (res) {
         upd({ msg: '同步完成 ✓ ' + summarize(res), busy: false })
         loadAll()
       }).catch(function (e) { upd({ msg: '同步失败: ' + String((e && e.message) || e), busy: false }) })
@@ -276,6 +280,8 @@ window.__ModuleLoader__.load({
       }
     }
     var dshSkillList = (stat && stat.dshSkills) || []
+    var workspaces = (stat && stat.workspaces) || []
+    var workspaceSkills = (stat && stat.workspaceSkills) || []
     var disabledMcp = (stat && stat.disabledMcp) || []
     var disabledSkills = (stat && stat.disabledSkills) || []
     var skillProvider = stat && stat.skillProvider
@@ -467,9 +473,66 @@ window.__ModuleLoader__.load({
       : h('div', null,
           syncSkillCards.length ? h('div', { className: 'ags-grid' }, syncSkillCards) : h('div', { className: 'ags-empty' }, '该来源暂无 skill'),
           h('div', { className: 'ags-foot' },
-            h('button', { className: 'ags-btn ags-btn-primary', disabled: busy || !selectedSkill.length, onClick: function () { runSync([], selectedSkill, false) } }, '同步选中 Skill'),
-            h('button', { className: 'ags-btn', disabled: busy || !selectedSkill.length, onClick: function () { runSync([], selectedSkill, true) } }, '覆盖同步'),
-            h('label', { className: 'ags-checkall' }, chk(allSkillChecked, function () { toggleAllSkill() }), '全选本页')))
+            h('span', { className: 'ags-label' }, '同步到'),
+            h('select', { className: 'ags-in', value: syncScope, onChange: function (e) { upd({ syncScope: e.target.value }) } },
+              h('option', { value: '' }, '全局 (~/.dsh/skills)'),
+              workspaces.map(function (ws) {
+                return h('option', { key: 'sc-' + ws.path, value: ws.path }, '工作区: ' + ws.label)
+              })),
+            h('button', { className: 'ags-btn ags-btn-primary', disabled: busy || !selectedSkill.length, onClick: function () { runSync([], selectedSkill, false, syncScope) } }, '同步选中 Skill'),
+            h('button', { className: 'ags-btn', disabled: busy || !selectedSkill.length, onClick: function () { runSync([], selectedSkill, true, syncScope) } }, '覆盖同步'),
+            h('label', { className: 'ags-checkall' }, chk(allSkillChecked, function () { toggleAllSkill() }), '全选本页')),
+          h('div', { className: 'ags-sec', style: { marginTop: 6, padding: 8 } },
+            h('div', { className: 'ags-h', style: { marginTop: 0 } }, '添加技能'),
+            h('div', null,
+              h('span', { className: 'ags-label' }, '来源路径'),
+              h('input', { className: 'ags-in', style: { width: 300 }, placeholder: '技能目录（含 SKILL.md）或 .md 文件', value: addPath, onChange: function (e) { upd({ addPath: e.target.value }) } }),
+              h('span', { className: 'ags-label' }, '添加到'),
+              h('select', { className: 'ags-in', value: addScope, onChange: function (e) { upd({ addScope: e.target.value }) } },
+                h('option', { value: '' }, '全局'),
+                workspaces.map(function (ws) {
+                  return h('option', { key: 'ad-' + ws.path, value: ws.path }, '工作区: ' + ws.label)
+                })),
+              h('button', { className: 'ags-btn ags-btn-primary', disabled: !addPath, onClick: function () { addSkillLocal() } }, '添加'))))
+
+    function addSkillLocal() {
+      call('add-skill', { path: addPath, scope: addScope }).then(function (r) {
+        upd({ msg: r && r.ok ? ('已添加技能 ' + r.name) : ('添加失败: ' + (r && r.error)), addPath: '' })
+        loadAll()
+      }).catch(function (e) { upd({ msg: '添加失败: ' + String((e && e.message) || e) }) })
+    }
+
+    // 主面板 Skills：按作用域分组显示（全局 / 工作区）
+    function manCardsFor(list, disabledList) {
+      return list.map(function (sk) {
+        var on = getEnabled('skill', sk.name, true)
+        var mode = skillModeOf(sk.name)
+        return h('div', { key: 'man-skill-' + (skillScope === 'global' ? 'g-' : 'w-') + sk.name, className: 'ags-card' + (on ? '' : ' ags-off'), onClick: function () { openDetail('skill', sk) } },
+          h('div', { className: 'ags-card-head' },
+            h('span', { className: 'ags-name', style: { flex: '1 1 auto' } }, sk.name),
+            h('span', { className: 'ags-badge' + (mode === 'link' ? ' ags-badge-link' : (on ? ' ags-badge-on' : ' ags-badge-off')) }, mode === 'link' ? '🔗 软连接' : (on ? '启用' : '已停用'))),
+          h('div', { className: 'ags-card-desc' }, String(sk.description || '')),
+          h('div', { className: 'ags-card-foot' },
+            h('button', { className: 'ags-btn', onClick: function (e) { stop(e); removeItem('skill', sk.name) } }, '移除'),
+            h('label', { onClick: stop }, ToggleSwitch(on, function (v) { toggleItem('skill', sk.name, v) }))))
+      }).concat(disabledList.map(function (s) {
+        var on = getEnabled('skill', s.name, false)
+        var mode = skillModeOf(s.name)
+        return h('div', { key: 'man-skill-off-' + (skillScope === 'global' ? 'g-' : 'w-') + s.name, className: 'ags-card' + (on ? '' : ' ags-off'), onClick: function () { openDetail('skill', { name: s.name, description: '', source: s.source }) } },
+          h('div', { className: 'ags-card-head' },
+            h('span', { className: 'ags-name', style: { flex: '1 1 auto' } }, s.name),
+            h('span', { className: 'ags-badge' + (mode === 'link' ? ' ags-badge-link' : ' ags-badge-off') }, mode === 'link' ? '🔗 软连接' : '已停用')),
+          h('div', { className: 'ags-card-desc' }, mode === 'link' ? '(软连接已移除，启用后重新链接)' : '(已停用，SKILL.md 已改名 .disabled)'),
+          h('div', { className: 'ags-card-foot' },
+            h('button', { className: 'ags-btn', onClick: function (e) { stop(e); removeItem('skill', s.name) } }, '移除'),
+            h('label', { onClick: stop }, ToggleSwitch(on, function (v) { toggleItem('skill', s.name, v) }))))
+      }))
+    }
+
+    var activeWs = workspaceSkills.filter(function (w) { return w.path === skillScope })[0] || null
+    var skillScopeCards = skillScope === 'global'
+      ? manCardsFor(dshSkillList, disabledSkills)
+      : (activeWs ? manCardsFor(activeWs.skills || [], activeWs.disabled || []) : [])
 
     var statusBody = stTab === 'mcp'
       ? h('div', null,
@@ -477,9 +540,18 @@ window.__ModuleLoader__.load({
             ? h('div', { className: 'ags-grid' }, manMcpCards.concat(manMcpDisabledCards))
             : h('div', { className: 'ags-empty' }, '暂无已同步的 MCP'))
       : h('div', null,
-          (manSkillCards.length || manSkillDisabledCards.length)
-            ? h('div', { className: 'ags-grid' }, manSkillCards.concat(manSkillDisabledCards))
-            : h('div', { className: 'ags-empty' }, '暂无已同步的 skill'))
+          h('div', { className: 'ags-tabs' },
+            h('button', { className: 'ags-tab' + (skillScope === 'global' ? ' ags-tab-active' : ''), onClick: function () { upd({ skillScope: 'global' }) } }, '全局 (' + dshSkillList.length + ')'),
+            workspaces.map(function (ws) {
+              var wse = workspaceSkills.filter(function (w) { return w.path === ws.path })[0]
+              var n = (wse ? wse.skills.length + wse.disabled.length : 0)
+              return h('button', { key: 'ws-' + ws.path, className: 'ags-tab' + (skillScope === ws.path ? ' ags-tab-active' : ''), onClick: function () { upd({ skillScope: ws.path }) } },
+                '📁 ' + ws.label + ' (' + n + ')')
+            })
+          ),
+          skillScopeCards.length
+            ? h('div', { className: 'ags-grid' }, skillScopeCards)
+            : h('div', { className: 'ags-empty' }, skillScope === 'global' ? '暂无已同步的 skill' : '该工作区暂无 skill'))
 
     // 主界面：DSH 现状（可启停）置顶
     var mainView = h('div', null,
