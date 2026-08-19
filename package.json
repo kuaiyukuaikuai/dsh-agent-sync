@@ -22,9 +22,12 @@
       "patch": "./cordis.patch.yml"
     },
     "client": {
-      "inject": [],
       "platform": "web",
-      "immediately": true
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-api-gateway"
+      ]
     }
   },
   "scripts": {

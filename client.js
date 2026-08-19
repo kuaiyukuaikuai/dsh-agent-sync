@@ -2,12 +2,15 @@
 // Lazy-CJS, zero build. All data/actions go through the host's HTTP routes under /dsh-agent-sync/*.
 // 说明：本插件不依赖任何组件库——纯 React（React.createElement）+ DSH 主题变量（--dsw-alias-*）
 // 自绘卡片、开关与弹窗，与 DSH 插件市场风格一致。
-;(function () {
-  'use strict'
+window.__ModuleLoader__.load({
+  id: 'dsh-agent-sync',
+  factory: function (require) {
+    'use strict'
+    var module = { exports: {} }
+    var exports = module.exports
+    var React = require('react')
 
-  function ensureStyles() {
-    if (typeof styles !== 'undefined') {
-      styles.insert(
+    var CSS = '' +
         '.ags-panel{font-size:13px;line-height:1.5;color:var(--dsw-alias-label-primary,#1f2328);max-width:900px}' +
         '.ags-h{font-weight:600;margin:10px 0 4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}' +
         '.ags-title{font-size:16px;font-weight:500;line-height:24px}' +
@@ -57,9 +60,16 @@
         '.ags-drow:last-child{border-bottom:none}' +
         '.ags-dkey{flex:0 0 96px;color:var(--dsw-alias-label-tertiary,#8b93a1);font-size:12px;line-height:1.6}' +
         '.ags-dval{flex:1 1 auto;font-size:12px;line-height:1.6;word-break:break-all;white-space:pre-wrap;min-width:0}'
-      )
+
+    var styleInjected = false
+    function ensureStyles() {
+      if (styleInjected) return
+      styleInjected = true
+      var style = document.createElement('style')
+      style.dataset.plugin = 'dsh-agent-sync'
+      style.textContent = CSS
+      document.head.appendChild(style)
     }
-  }
 
   var h = React.createElement
   var SOURCE_LABELS = { codex: 'Codex', claude: 'Claude Code', ccswitch: 'cc-switch', hermes: 'Hermes', opencode: 'opencode', gemini: 'Gemini', grok: 'Grok', kimi: 'Kimi', codebuddy: 'CodeBuddy', trae: 'Trae', openclaw: 'OpenClaw', qoder: 'Qoder', workbuddy: 'WorkBuddy', zcode: 'Zcode', lingma: '通义灵码', codemoss: 'CodeMoss', copilot: 'Copilot', cursor: 'Cursor', windsurf: 'Windsurf', cline: 'Cline', roo: 'Roo Code', qwen: 'Qwen Code', custom: '自定义' }
@@ -556,4 +566,5 @@
   exports.apply = apply
   exports.inject = []
   return module.exports
-})()
+  }
+})
