@@ -27,11 +27,18 @@ servers** and **Skills** into DSH with one click.
 | Capability | What it does |
 |---|---|
 | 🔍 Auto-scan | Reads each agent's real config (`~/.codex/config.toml`, `~/.claude.json`, `~/.cc-switch/cc-switch.db`, `~/.codebuddy/mcp.json`, `~/.workbuddy/.mcp.json`, …) and discovers MCP servers + Skills |
-| ⚡ One-click sync MCP | Writes servers as `@deepseek-ai/dsh-mcp-client` instances into every profile's `cordis.patch.yml` (auto-repairs invalid YAML) → they become `mcp__<server>__<tool>` tools |
-| 🧠 One-click sync Skills | Copies skill bundles into `$DSH_HOME/skills`, auto-discovered by DSH's skill-filesystem provider |
-| 🔀 Enable / Disable | Toggle any synced MCP server or skill on/off — disabled MCPs are dropped from the profile patch, disabled skills have their `SKILL.md` renamed to `SKILL.md.disabled` (hidden from discovery, fully reversible) |
-| 🖥️ GUI panel | Settings → **MCP/Skills同步**: per-source tabs (main + "More"), MCP/Skills switch, select-all, and a profile-grouped status view |
-| 🛠️ Model tools | `agent_sync_scan` / `agent_sync_do` / `agent_sync_status` / `agent_sync_remove` / `agent_sync_sources` |
+| ⚡ One-click sync MCP | Writes servers as `@deepseek-ai/dsh-mcp-client` instances into each profile's `cordis.patch.yml` (auto-repairs invalid YAML) → they become `mcp__<server>__<tool>` tools |
+| 🧠 One-click sync Skills | Copies/links skill bundles into `$DSH_HOME/skills` (**global**) or `<workspace>/.dsh/skills` (**per-workspace**), auto-discovered by DSH's skill-filesystem provider |
+| 🗂️ Scope-aware management | **MCP/Skills 管理** page: enabled/disabled switch, remove, skills grouped by global + each workspace tab |
+| ➕ Add MCP / Skill | Manual add — MCP by form (stdio / streamable-http), Skill from a **folder / single .md / .zip** (or drag & drop) into global or a workspace |
+| ⇄ Migrate Skills | Move or **copy** skills between global / workspaces (migrate dialog, multi-select) |
+| 🏷️ Skill groups | Create named groups, bind skills, filter the list by group |
+| 📄 Skill content view | Click a skill → detail modal shows metadata **and the SKILL.md body** |
+| 🗑️ Delete confirm | Remove buttons arm a 3-second inline confirm (auto-reverts) |
+| ⚙️ Config | **Skill sync mode** (copy / link/junction) + **MCP sync target** (all / desktop / web profiles) from the ⚙️ settings dialog |
+| 🔀 Enable / Disable | Toggle any synced MCP server or skill on/off — disabled MCPs are dropped from the profile patch, disabled skills have their `SKILL.md` renamed to `SKILL.md.disabled` (hidden, fully reversible) |
+| 🖥️ GUI panel | Settings → **MCP/Skills**: centered MCP/Skills switch, capsule tabs & buttons, card grid, search |
+| 🛠️ Model tools | `agent_sync_scan` / `agent_sync_do` / `agent_sync_status` / `agent_sync_config` / `agent_sync_add_skill` / `agent_sync_toggle` / `agent_sync_remove` / `agent_sync_sources` |
 | 🧩 Extensible | A generic agent registry (`AGENT_DEFS`) — adding a new agent is one line |
 
 ## 🚀 Quick start
@@ -73,20 +80,25 @@ Restart DSH.
 
 **Settings → MCP/Skills** (main page **MCP/Skills 管理**)
 
-- **Manage (main page)** — profile tabs (`desktop` / `web`) → **MCP / Skills** switch; card grid where each card has a **toggle switch** (enable/disable in one control) and remove; disabled items are greyed with a badge. **Skills are grouped by scope**: global (`~/.dsh/skills`) and per-workspace (`<workspace>/.dsh/skills`) with workspace tabs
-- **MCP/Skills同步 →** — a button that opens the sync page: per-source tabs (common agents + "More ▾"), select-all, sync buttons (choose **global or a workspace** as the skill target), custom sources, and **add-skill** (pick a local skill directory / `.md` file and a target scope)
+- **Manage (main page)** — a centered **MCP / Skills** switch; card grid where each card has a **toggle switch** (enable/disable in one control) and a **remove button with a 3-second inline confirm**; disabled items are greyed with a badge. **Skills are grouped by scope**: global (`~/.dsh/skills`) and per-workspace (`<workspace>/.dsh/skills`) with workspace tabs + a search box + skill-group filter chips.
+- **Toolbar (right of the switch)** — **⇄ 迁移技能** (migrate/copy skills between scopes) and **＋ 添加 MCP / ＋ 添加 Skill** (manual add).
+- **MCP/Skills同步 →** — a button that opens the sync page: per-source tabs (common agents + "More ▾"), select-all, sync buttons (choose **global or a workspace** as the skill target), custom sources.
+- **＋ 添加 Skill** dialog — pick a **folder** (bundle), a **single .md**, or a **.zip** — or **drag & drop** any of those onto the dialog; choose the target scope (global / workspace).
+- **⚙️ 设置** dialog — **Skill 同步方式** (copy / link=junction) and **MCP 同步目标** (all / desktop / web profiles).
 
-> **UI implementation** — no component library. The panel is vanilla React (`React.createElement`) styled with DSH's theme tokens (`--dsw-alias-*`), matching the plugin market look; the toggle switch is a small custom CSS component.
+> **UI implementation** — no component library. The panel is vanilla React (`React.createElement`) styled with DSH's theme tokens (`--dsw-alias-*`), capsule tabs/buttons, and a small custom CSS toggle switch.
 
 ### Model tools
 
 ```
-agent_sync_scan      # list what can be synced (env values are hidden, keys only)
-agent_sync_do        # mcp: ["all"] or names, skills: ["all"] or names
-agent_sync_toggle    # enable/disable a synced mcp/skill ({type, name, enabled})
-agent_sync_status    # current DSH-side state + sync bookkeeping (incl. disabled items)
-agent_sync_remove    # remove a synced mcp/skill
-agent_sync_sources   # manage custom sources (list / add / delete)
+agent_sync_scan        # list what can be synced (env values are hidden, keys only)
+agent_sync_do          # mcp/skills: ["all"] or names; scope: global or a workspace path
+agent_sync_config      # get/set { skillSyncMode: copy|link, syncProfiles: all|desktop|web }
+agent_sync_add_skill   # add a skill from a local directory (SKILL.md) or .md file, scope optional
+agent_sync_toggle      # enable/disable a synced mcp/skill ({type, name, enabled})
+agent_sync_status      # current DSH-side state + sync bookkeeping (incl. disabled items)
+agent_sync_remove      # remove a synced mcp/skill
+agent_sync_sources     # manage custom sources (list / add / delete)
 ```
 
 ## 📦 Supported agents
@@ -132,7 +144,7 @@ other agents' configs ──► scan ──► sync ──► DSH
 ```
 
 - **MCP** is written into each profile's `cordis.patch.yml` (a managed `# --- dsh-agent-sync managed ---` section, repaired if the file was invalid). The desktop GUI shell composes once at boot, so **MCP activates on the next DSH restart**; the `dsh` CLI / headless boot hot-applies profile patches via HMR.
-- **Skills** are copied into `$DSH_HOME/skills` and discovered by sessions whose agent preset mounts the `skill-filesystem` provider.
+- **Skills** are copied (default) or **linked via junction** (`skillSyncMode: link`) into `$DSH_HOME/skills` (global) or `<workspace>/.dsh/skills` (per-workspace), and discovered by sessions whose agent preset mounts the `skill-filesystem` provider. In link mode, disabling a skill removes the junction (never touches the source); enabling recreates it.
 
 ## ⚠️ Security notes
 
@@ -149,7 +161,7 @@ Nothing is installed on the machine yet, or that agent stores its config elsewhe
 Yes — the desktop GUI shell composes its profile once at boot. The `dsh` CLI/headless path hot-applies profile patches.
 
 **Can I remove something?**
-Yes — the GUI's **DSH 现状** section has remove buttons, or use `agent_sync_remove`.
+Yes — the GUI's **MCP/Skills 管理** page has remove buttons (with a 3-second inline confirm), or use `agent_sync_remove`.
 
 ## 🧑‍💻 Development
 
@@ -167,7 +179,7 @@ plugin-market.json  DSH plugin market submission entry
 
 ## 🛒 DSH Plugin Market
 
-Once [PR #1729](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/1729) is merged, find it in **DSH → Settings → Plugin Market**, or install directly:
+Listed in the [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) community curated list — find it in **DSH → Settings → Plugin Market**, on [awesome-dsh-plugin.com](https://awesome-dsh-plugin.com/p/kuaiyukuaikuai/dsh-agent-sync/), or install directly:
 
 ```bash
 dsh plugin --profile web add github:kuaiyukuaikuai/dsh-agent-sync
