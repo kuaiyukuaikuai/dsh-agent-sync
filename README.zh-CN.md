@@ -41,6 +41,12 @@ Windsurf、Cline、Roo Code、Qwen Code 等** —— 并把它们的 **MCP 服�
 | 🛠️ 模型工具 | `agent_sync_scan` / `agent_sync_do` / `agent_sync_status` / `agent_sync_config` / `agent_sync_add_skill` / `agent_sync_toggle` / `agent_sync_remove` / `agent_sync_sources` |
 | 🧩 易扩展 | 通用 agent 注册表（`AGENT_DEFS`）——新增一个 agent 只需一行 |
 
+## 📸 界面截图
+
+| MCP/Skills 管理 | MCP/Skills 同步 | 添加技能 |
+|---|---|---|
+| ![管理页](assets/screenshot-main.png) | ![同步页](assets/screenshot-sync.png) | ![添加技能](assets/screenshot-add.png) |
+
 ## 🚀 快速开始
 
 ### 环境要求
